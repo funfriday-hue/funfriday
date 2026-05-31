@@ -44,4 +44,15 @@
             <version>3.2.4</version>
         </dependency>
     </dependencies>
+
+    <build>
+        <!-- This renames the file to backend.jar automatically so it matches your Linux service -->
+        <finalName>backend</finalName>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
 </project>
