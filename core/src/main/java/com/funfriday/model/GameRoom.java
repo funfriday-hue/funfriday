@@ -44,7 +44,10 @@ public class GameRoom {
         if (this.playerMap.containsKey(id)) {
             return playerMap.get(id);
         }
-        GamePlayer player = new GamePlayer(id != null ? id : UUID.randomUUID().toString(), name, isHost);
+        if (id == null) {
+            id = UUID.randomUUID().toString();
+        }
+        GamePlayer player = new GamePlayer(id, name, isHost);
         this.playerMap.put(id, player);
         this.getGameData().getScoreBoard().put(id, this.gameLogic.createInitialStats(player, isHost));
         return player;
