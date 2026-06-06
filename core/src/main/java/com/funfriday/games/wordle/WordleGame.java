@@ -1,20 +1,95 @@
 package com.funfriday.games.wordle;
 
 
+import com.funfriday.exception.InvalidGameMoveException;
 import com.funfriday.model.*;
 import com.funfriday.service.GameLogic;
+import jakarta.annotation.PostConstruct;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestTemplate;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Component
 public class WordleGame implements GameLogic {
 
     private static final int TOTAL_WORDS_RUSH = 10;
+
+    private static final int MAX_RETRIES = 3;
+    private static final long RETRY_DELAY_MS = 2000; // 2 seconds delay between retries
+
+    private static List<String> globalWordPool = new ArrayList<>();
+
     private static final List<String> WORD_POOL = Arrays.asList(
             "REACT", "STORM", "CLOUD", "LIGHT", "FRAME",
             "GHOST", "BLADE", "POWER", "NIGHT", "SPACE"
     );
+
+    @PostConstruct
+    public void loadDictionary() {
+        boolean apiSuccess = false;
+        int attempt = 0;
+
+        // Step 1: Retry Loop for Remote API
+        while (attempt < MAX_RETRIES && !apiSuccess) {
+            attempt++;
+            try {
+                System.out.println("🔄 [" + attempt + "/" + MAX_RETRIES + "] Attempting to connect to Wordle API...");
+                RestTemplate restTemplate = new RestTemplate();
+                String url = "https://raw.githubusercontent.com/tabatkins/wordle-list/master/words";
+                String response = restTemplate.getForObject(url, String.class);
+
+                if (response != null && !response.isEmpty()) {
+                    this.globalWordPool = Arrays.stream(response.split("\\r?\\n"))
+                            .map(String::trim)
+                            .map(String::toUpperCase)
+                            .filter(word -> word.length() == 5)
+                            .collect(Collectors.toList());
+
+                    System.out.println("🚀 Success! Loaded " + globalWordPool.size() + " words dynamically from API on attempt " + attempt);
+                    apiSuccess = true;
+                }
+            } catch (Exception e) {
+                System.err.println("⚠️ Connection attempt " + attempt + " failed: " + e.getMessage());
+
+                // If we haven't reached max retries, wait a bit before trying again
+                if (attempt < MAX_RETRIES) {
+                    try {
+                        System.out.println("Sleeping for " + (RETRY_DELAY_MS / 1000) + " seconds before next retry...");
+                        Thread.sleep(RETRY_DELAY_MS);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        System.err.println("❌ Retry sleep interrupted.");
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Step 2: Fallback to local resource file if all retries failed
+        if (this.globalWordPool.isEmpty()) {
+            System.out.println("📦 All API retries exhausted. Engaging fallback protocol: Loading wordle_dictionary.txt...");
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(new ClassPathResource("wordle_dictionary.txt").getInputStream()))) {
+
+                this.globalWordPool = reader.lines()
+                        .map(String::trim)
+                        .map(String::toUpperCase)
+                        .filter(word -> word.length() == 5)
+                        .collect(Collectors.toList());
+
+                System.out.println("✅ Backup complete. Loaded " + globalWordPool.size() + " words from local text resource.");
+            } catch (Exception fileEx) {
+                System.err.println("❌ Critical Error: Local fallback asset failed to parse! " + fileEx.getMessage());
+                // Emergency hardcoded fallback array so your application never fails to launch under any circumstance
+                this.globalWordPool = WORD_POOL;
+            }
+        }
+    }
 
     @Override
     public void processMove(GameAction action, GameData data) {
@@ -23,6 +98,13 @@ public class WordleGame implements GameLogic {
         String playerId = action.getPlayerId();
         String guess = wAction.getGuess().toUpperCase();
 
+        // 1. STRICTOR VALIDATION: Length and Dictionary Pool verification
+        if (guess.length() != 5 || !globalWordPool.contains(guess)) {
+            throw new InvalidGameMoveException("The word '" + guess + "' is not in the dictionary.", "NOT_A_VALID_WORD");
+        }
+
+
+        // 2. Process valid guess (rest of your logic remains completely safe)
         String target = wData.getCurrentTargetForPlayer(playerId);
         WordleGuessResult[] results = calculateColors(guess, target);
         WordleAttempt attempt = new WordleAttempt(playerId, guess, results, System.currentTimeMillis());
@@ -34,10 +116,6 @@ public class WordleGame implements GameLogic {
         if (guess.equals(target)) {
             int currentProgress = wData.getPlayerProgress().getOrDefault(playerId, 0);
             wData.getPlayerProgress().put(playerId, currentProgress + 1);
-
-            // FIX: Clear attempts so the next phase starts with an empty board
-            // We use a small trick: clear it here, or the frontend can trigger the clear.
-            // Let's clear it here so the 'GameData' sent back is fresh.
             wData.getPlayerAttempts().put(playerId, new ArrayList<>());
         }
     }
@@ -109,12 +187,10 @@ public class WordleGame implements GameLogic {
     public GameData initializeData() {
         WordleData data = new WordleData();
 
-        // Initialize 10 random words (or a fixed list)
-        List<String> rushWords = new ArrayList<>(WORD_POOL);
-        Collections.shuffle(rushWords);
-        data.setTargetWords(rushWords.subList(0, TOTAL_WORDS_RUSH));
+        List<String> roomSelection = new ArrayList<>(this.globalWordPool);
+        Collections.shuffle(roomSelection);
+        data.setTargetWords(roomSelection.subList(0, Math.min(TOTAL_WORDS_RUSH, roomSelection.size())));
 
-        // Initialize maps
         data.setPlayerProgress(new HashMap<>());
         data.setPlayerAttempts(new HashMap<>());
         data.setFinished(false);
