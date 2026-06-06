@@ -3,11 +3,13 @@ import com.funfriday.model.*;
 import com.funfriday.service.GameLogic;
 import org.springframework.stereotype.Component;
 
+import java.util.Map;
+
 @Component
 public class SudokuGameHandler implements GameLogic {
 
     @Override
-    public GameData initializeData() {
+    public GameData initializeData(GameConfiguration configuration) {
         int[][] puzzle = {
                 {5, 3, 0, 0, 7, 0, 0, 0, 0},
                 {6, 0, 0, 1, 9, 5, 0, 0, 0},
@@ -47,10 +49,10 @@ public class SudokuGameHandler implements GameLogic {
         else if ("SUDOKU_RESET".equals(sAction.getType())) {
             sData.initializePlayer(playerId);
             // Reset player status to ACTIVE if they were GIVEN_UP
-            data.getScoreBoard().get(playerId).setStatus(PlayerStatus.ACTIVE);
+            sData.getScoreBoard().get(playerId).setStatus(PlayerStatus.ACTIVE);
         }
         else if ("SUDOKU_GIVE_UP".equals(sAction.getType())) {
-            PlayerStats stats = data.getScoreBoard().get(playerId);
+            PlayerStats stats = sData.getScoreBoard().get(playerId);
             if (stats != null) {
                 stats.setTimeInSeconds(System.currentTimeMillis() - data.getStartTime());
                 stats.setStatus(PlayerStatus.GIVEN_UP);
@@ -140,5 +142,10 @@ public class SudokuGameHandler implements GameLogic {
     @Override
     public PlayerStats createInitialStats(GamePlayer player, boolean isHost) {
         return new SudokuPlayerStats(player, isHost);
+    }
+
+    @Override
+    public GameConfiguration parseConfiguration(Map<String, Object> payload) {
+        return new SudokuConfiguration();
     }
 }

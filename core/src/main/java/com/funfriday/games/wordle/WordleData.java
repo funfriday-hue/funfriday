@@ -12,14 +12,17 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Data
 @EqualsAndHashCode(callSuper = true)
-public class WordleData extends GameData {
+public class WordleData extends GameData<WordleConfiguration> {
     private List<String> targetWords; // The 10 words for this session
     private Map<String, Integer> playerProgress; // Tracks which word index (0-9) the player is on
     private Map<String, List<WordleAttempt>> playerAttempts;
+    private WordleGameMode gameMode;
+
 
     // Helper to get current word for a specific player
     public String getCurrentTargetForPlayer(String playerId) {
         int index = playerProgress.getOrDefault(playerId, 0);
         return targetWords.get(index);
     }
+
 }

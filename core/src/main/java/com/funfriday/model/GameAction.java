@@ -17,4 +17,5 @@ import lombok.Data;
 public abstract class GameAction {
     private String type;
     private String playerId;
+    private long clientTimestamp = System.currentTimeMillis(); // Client submission time
 }

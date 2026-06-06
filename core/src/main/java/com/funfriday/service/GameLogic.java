@@ -1,19 +1,20 @@
 package com.funfriday.service;
 
-import com.funfriday.model.GameAction;
-import com.funfriday.model.GameData;
-import com.funfriday.model.GamePlayer;
-import com.funfriday.model.PlayerStats;
+import com.funfriday.model.*;
+
+import java.util.Map;
 
 public interface GameLogic {
-    GameData initializeData();
+    GameData<?> initializeData(GameConfiguration config);
 
     // Now uses GameAction instead of Map
-    void processMove(GameAction action, GameData data);
+    void processMove(GameAction action, GameData<?> data);
 
-    void updateStats(PlayerStats stats, GameData data);
+    void updateStats(PlayerStats stats, GameData<?> data);
 
-    boolean isGameOver(GameData data);
+    boolean isGameOver(GameData<?> data);
 
     PlayerStats createInitialStats(GamePlayer player, boolean isHost);
+
+    GameConfiguration parseConfiguration(Map<String, Object> payload);
 }

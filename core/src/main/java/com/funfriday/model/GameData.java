@@ -8,6 +8,7 @@ import lombok.Data;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Data
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
@@ -15,15 +16,25 @@ import java.util.Map;
         @JsonSubTypes.Type(value = WordleData.class, name = "WORDLE"),
         @JsonSubTypes.Type(value = SudokuData.class, name = "SUDOKU")
 })
-public abstract class GameData {
+public abstract class GameData<T extends GameConfiguration> {
     // The central map: Player Name -> Their Stats
-    private Map<String, PlayerStats> scoreBoard = new HashMap<>();
+    private Map<String, PlayerStats> scoreBoard = new ConcurrentHashMap<>();
+    private T gameConfiguration;
 
-    private boolean finished = false;
+    private volatile boolean finished = false;
     private GamePlayer winner;
-    private long startTime;
+    private volatile long startTime;
+    private volatile long endTimeMillis; // server authoritative end time in epoch millis
 
     public GameData() {
         this.startTime = System.currentTimeMillis();
     }
+
+    // convenience helper
+    public long getRemainingSeconds() {
+        long remaining = getEndTimeMillis() - System.currentTimeMillis();
+        return Math.max(0, remaining / 1000);
+
+    }
+
 }

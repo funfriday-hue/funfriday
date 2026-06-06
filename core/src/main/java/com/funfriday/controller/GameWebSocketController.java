@@ -43,55 +43,19 @@ public class GameWebSocketController {
             @Payload GameAction action
     ) {
         log.info("Received action from player {} in room {}", action.getPlayerId(), roomId);
+        String playerId = (String) headerAccessor.getSessionAttributes().get("playerId");
+        action.setPlayerId(playerId);
+        // submit and then broadcast after completion
+        roomService.submitPlayerAction(roomId, action)
+                .whenComplete((updatedRoom, ex) -> {
+                    if (ex != null) {
+                        log.warn("Error processing action for room {}: {}", roomId, ex.getMessage());
+                        sendErrorMessage(roomId, action.getPlayerId(), "Action processing failed");
+                    } else {
+                        broadcastRoomUpdate(roomId, updatedRoom);
+                    }
+                });
 
-        try {
-            // 1. Retrieve the room
-            GameRoom room = roomService.getRoom(roomId);
-            if (room == null) {
-                log.error("Room {} not found", roomId);
-                return;
-            }
-
-            String playerId = (String) headerAccessor.getSessionAttributes().get("playerId");
-            action.setPlayerId(playerId);
-
-            // 2. Delegate logic to the room
-            // This handles processMove, updateStats, and isGameOver checks
-            room.handlePlayerAction(action);
-
-            // 3. Broadcast the entire room state to all subscribers
-            // The frontend receives the updated GameData and Scoreboard
-            broadcastRoomUpdate(roomId, room);
-
-        } catch (InvalidGameMoveException e) {
-            log.warn("Business rule violation: {}", e.getMessage());
-            // 🎯 Route the machine-readable error token ("NOT_A_VALID_WORD") to the player's custom path!
-            sendErrorMessage(roomId, action.getPlayerId(), e.getErrorCode());
-
-        } catch (IllegalStateException e) {
-            log.warn("Invalid move attempted: {}", e.getMessage());
-            sendErrorMessage(roomId, action.getPlayerId(), e.getMessage());
-        } catch (Exception e) {
-            log.error("Error processing move", e);
-            sendErrorMessage(roomId, action.getPlayerId(), "An unexpected error occurred.");
-        }
-    }
-
-    /**
-     * Optional: Logic to handle a player explicitly signaling they are ready
-     */
-    @MessageMapping("/game/{roomId}/ready")
-    public void handleReady(
-            @DestinationVariable("roomId") String roomId,
-            @Payload String playerName
-    ) {
-        GameRoom room = roomService.getRoom(roomId);
-        PlayerStats stats = room.getGameData().getScoreBoard().get(playerName);
-
-        if (stats != null) {
-            // Logic to start game if all players are ready could go here
-            broadcastRoomUpdate(roomId, room);
-        }
     }
 
     @MessageMapping("/game/{roomId}/join")
@@ -111,16 +75,33 @@ public class GameWebSocketController {
     @MessageMapping("/game/{roomId}/start")
     public void startGame(@DestinationVariable("roomId") String roomId,
                           SimpMessageHeaderAccessor headerAccessor,
-                          StartRequest request) {
-        String playerId = (String) headerAccessor.getSessionAttributes().get("playerId");
-        GameRoom room = roomService.getRoom(roomId);
-        if (room != null && room.getHost().getId().equals(playerId)) {
-            room.setStatus(GameStatus.IN_PROGRESS);
-            messagingTemplate.convertAndSend("/topic/room/" + roomId, room);
-        }
-    }
+                          @Payload StartRequest request) {
 
-    // --- Helper Methods ---
+        // Extract protocol metadata parameters safely from socket session attributes
+        String playerId = (String) headerAccessor.getSessionAttributes().get("playerId");
+
+        // Submit startGame to the room executor and broadcast on completion
+        roomService.submitStartGame(roomId, playerId, request.getGameMode(), request.getGenericProperties())
+                .thenAccept(updatedRoom -> {
+                    log.info("Game started in room {} by host {}", roomId, playerId);
+                    messagingTemplate.convertAndSend("/topic/room/" + roomId, updatedRoom);
+                })
+                .exceptionally(ex -> {
+                    log.warn("Error starting game in room {}: {}", roomId, ex.getMessage());
+
+                    Map<String, String> errorResponse = new HashMap<>();
+                    if (ex.getCause() instanceof IllegalStateException) {
+                        errorResponse.put("error", ex.getCause().getMessage());
+                        errorResponse.put("status", "BAD_REQUEST");
+                    } else {
+                        errorResponse.put("error", "An unexpected internal server error occurred while launching the match.");
+                        errorResponse.put("status", "INTERNAL_SERVER_ERROR");
+                    }
+
+                    messagingTemplate.convertAndSendToUser(playerId, "/queue/errors", errorResponse);
+                    return null;
+                });
+    }
 
     private void broadcastRoomUpdate(String roomId, GameRoom room) {
         messagingTemplate.convertAndSend("/topic/room/" + roomId, room);

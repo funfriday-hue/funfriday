@@ -10,6 +10,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 @Getter
 @Setter
@@ -18,11 +19,12 @@ public class GameRoom {
     private GameStatus status;
     @JsonIgnore
     private GameLogic gameLogic;
-    private GameData gameData;
+    private GameData<?> gameData;
     private Long startTime;
     private GamePlayer host;
     private GameFactory.GameType type;
-    Map<String, GamePlayer> playerMap;
+    private final Map<String, GamePlayer> playerMap = new ConcurrentHashMap<>();
+    private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 
     public GameRoom(String roomId, String hostId, String hostname, GameLogic logic, GameFactory.GameType gameType) {
         this.roomId = roomId;
@@ -30,10 +32,6 @@ public class GameRoom {
         this.startTime = System.currentTimeMillis();
         this.status = GameStatus.WAITING;
         this.type = gameType;
-        this.playerMap = new HashMap<>();
-
-        // Let the specific game set up its data requirements
-        gameData = this.gameLogic.initializeData();
         this.host = this.addPlayer(hostId, hostname, true);
     }
 
@@ -41,46 +39,83 @@ public class GameRoom {
         if (name == null) {
             throw new IllegalStateException("name is required");
         }
-        if (this.playerMap.containsKey(id)) {
-            return playerMap.get(id);
-        }
         if (id == null) {
             id = UUID.randomUUID().toString();
         }
-        GamePlayer player = new GamePlayer(id, name, isHost);
-        this.playerMap.put(id, player);
-        this.getGameData().getScoreBoard().put(id, this.gameLogic.createInitialStats(player, isHost));
-        return player;
+        GamePlayer newPlayer = new GamePlayer(id, name, isHost);
+        GamePlayer existing = playerMap.putIfAbsent(id, newPlayer);
+        return existing != null ? existing : newPlayer;
+    }
+
+    /**
+     * 🎯 Encapsulated Domain Logic: Switches room status from WAITING to IN_PROGRESS
+     * and sets up the concrete GameData with initial participant statistics.
+     */
+    public void startGame(String requestingPlayerId, String gameMode, Map<String, Object> genericProperties) {
+        lock.writeLock().lock();
+        try {
+            if (!this.host.getId().equals(requestingPlayerId)) {
+                throw new IllegalStateException("Only the room host can start the game.");
+            }
+            if (this.status != GameStatus.WAITING) {
+                throw new IllegalStateException("Game cannot be started from its current state: " + this.status);
+            }
+
+            Map<String, Object> parsePayload = new HashMap<>(genericProperties != null ? genericProperties : new HashMap<>());
+            parsePayload.put("gameMode", gameMode);
+
+            GameConfiguration config = this.gameLogic.parseConfiguration(parsePayload);
+            GameData<?> initialGameData = this.gameLogic.initializeData(config);
+
+            Map<String, PlayerStats> freshScoreboard = new ConcurrentHashMap<>();
+            for (GamePlayer player : this.playerMap.values()) {
+                PlayerStats stats = this.gameLogic.createInitialStats(player, player.isHost());
+                freshScoreboard.put(player.getId(), stats);
+            }
+            initialGameData.setScoreBoard(freshScoreboard);
+
+            this.gameData = initialGameData;
+            this.startTime = System.currentTimeMillis();
+            this.status = GameStatus.IN_PROGRESS;
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 
     public void handlePlayerAction(GameAction action) {
-        // 1. Validate the game is in a playable state
-        if (this.status != GameStatus.IN_PROGRESS) {
-            throw new IllegalStateException("Game is not currently active.");
-        }
+        lock.writeLock().lock();
+        try {
+            if (this.status != GameStatus.IN_PROGRESS) {
+                throw new IllegalStateException("Game is not currently active.");
+            }
 
-        if (!this.playerMap.containsKey(action.getPlayerId())) {
-            throw new IllegalStateException("Invalid User");
-        }
+            if (this.gameData != null && this.gameData.getEndTimeMillis() > 0) {
+                long playerTime = action.getClientTimestamp();
+                if (playerTime >= this.gameData.getEndTimeMillis()) {
+                    throw new IllegalStateException("Game time has expired. No more moves allowed.");
+                }
+            }
 
+            if (!this.playerMap.containsKey(action.getPlayerId())) {
+                throw new IllegalStateException("Invalid User");
+            }
 
-        // 2. Process the move using the Stateless Logic
-        // This updates the 'gameData' object (e.g., adds an attempt to WordleData)
-        this.gameLogic.processMove(action, this.gameData);
+            // process the move and update stats while holding the write lock
+            this.gameLogic.processMove(action, this.gameData);
 
+            PlayerStats stats = this.gameData.getScoreBoard().get(action.getPlayerId());
+            if (stats != null) {
+                this.gameLogic.updateStats(stats, this.gameData);
+                long elapsedMillis = System.currentTimeMillis() - this.startTime;
+                stats.setTimeInSeconds(elapsedMillis / 1000);
+            }
 
-        // 3. Update the scoreboard for the player who performed the action
-        PlayerStats stats = this.getGameData().getScoreBoard().get(action.getPlayerId());
-        if (stats != null) {
-            this.gameLogic.updateStats(stats, this.gameData);
-            long elapsedMillis = System.currentTimeMillis() - this.startTime;
-            stats.setTimeInSeconds(elapsedMillis / 1000);
-        }
-
-        // 4. Check if this move ended the game
-        if (this.gameLogic.isGameOver(this.gameData)) {
-            this.status = GameStatus.FINISHED;
-            this.gameData.setFinished(true);
+            if (this.gameLogic.isGameOver(this.gameData)) {
+                this.status = GameStatus.FINISHED;
+                this.gameData.setFinished(true);
+            }
+        } finally {
+            lock.writeLock().unlock();
         }
     }
 

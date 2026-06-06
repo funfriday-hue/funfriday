@@ -6,12 +6,13 @@ import lombok.Setter;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Setter
 @Getter
-public class SudokuData extends GameData {
+public class SudokuData extends GameData<SudokuConfiguration> {
     // Stores the 9x9 board for each player
-    private Map<String, int[][]> playerBoards = new HashMap<>();
+    private Map<String, int[][]> playerBoards = new ConcurrentHashMap<>();
 
     // The initial board provided at the start (to know which cells are immutable)
     private int[][] initialBoard;
