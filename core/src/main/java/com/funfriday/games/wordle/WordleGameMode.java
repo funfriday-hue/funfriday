@@ -24,4 +24,16 @@ public enum WordleGameMode {
         this.targetValue = targetValue;
     }
 
+    public String getDisplayName() {
+        return switch (this) {
+            case WORD_3 -> "3-Word Race";
+            case WORD_5 -> "5-Word Race";
+            case WORD_10 -> "10-Word Marathon";
+            case TIME_2 -> "2 Min Sprint";
+            case TIME_3 -> "3 Min Blitz";
+            case TIME_5 -> "5 Min Endurance";
+            default -> this.name();
+        };
+    }
+
 }

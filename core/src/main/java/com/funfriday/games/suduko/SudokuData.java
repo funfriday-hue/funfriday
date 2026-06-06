@@ -11,23 +11,26 @@ import java.util.concurrent.ConcurrentHashMap;
 @Setter
 @Getter
 public class SudokuData extends GameData<SudokuConfiguration> {
-    // Stores the 9x9 board for each player
+    // Stores the board for each player (size depends on mode: 9x9 or 6x6)
     private Map<String, int[][]> playerBoards = new ConcurrentHashMap<>();
 
     // The initial board provided at the start (to know which cells are immutable)
     private int[][] initialBoard;
 
-    public SudokuData(int[][] puzzle) {
+    // Board size (9 or 6)
+    private int boardSize;
+
+    public SudokuData(int[][] puzzle, int boardSize) {
         this.initialBoard = puzzle;
+        this.boardSize = boardSize;
     }
 
     public void initializePlayer(String playerId) {
         // Deep copy the initial board for the new player
-        int[][] boardCopy = new int[9][9];
-        for (int i = 0; i < 9; i++) {
+        int[][] boardCopy = new int[boardSize][boardSize];
+        for (int i = 0; i < boardSize; i++) {
             boardCopy[i] = initialBoard[i].clone();
         }
         playerBoards.put(playerId, boardCopy);
     }
-
 }

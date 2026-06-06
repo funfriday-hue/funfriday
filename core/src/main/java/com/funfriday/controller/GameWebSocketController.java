@@ -49,7 +49,7 @@ public class GameWebSocketController {
         roomService.submitPlayerAction(roomId, action)
                 .whenComplete((updatedRoom, ex) -> {
                     if (ex != null) {
-                        log.warn("Error processing action for room {}: {}", roomId, ex.getMessage());
+                        log.warn("Error processing action for room {}: {}", roomId, ex.getMessage(), ex);
                         sendErrorMessage(roomId, action.getPlayerId(), "Action processing failed");
                     } else {
                         broadcastRoomUpdate(roomId, updatedRoom);
@@ -87,7 +87,7 @@ public class GameWebSocketController {
                     messagingTemplate.convertAndSend("/topic/room/" + roomId, updatedRoom);
                 })
                 .exceptionally(ex -> {
-                    log.warn("Error starting game in room {}: {}", roomId, ex.getMessage());
+                    log.warn("Error starting game in room {}: {}", roomId, ex.getMessage(), ex);
 
                     Map<String, String> errorResponse = new HashMap<>();
                     if (ex.getCause() instanceof IllegalStateException) {

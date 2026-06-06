@@ -1,19 +1,22 @@
 package com.funfriday.games.wordle;
 
+import com.funfriday.dto.GameModeDTO;
 import com.funfriday.exception.InvalidGameMoveException;
 import com.funfriday.model.*;
 import com.funfriday.service.GameLogic;
+import com.funfriday.service.GameModeProvider;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class WordleGame implements GameLogic {
+public class WordleGame implements GameLogic, GameModeProvider {
 
     private static final int TOTAL_WORDS_RUSH = 10;
 
@@ -148,9 +151,6 @@ public class WordleGame implements GameLogic {
             data.setEndTimeMillis(System.currentTimeMillis() + (gameMode.getTargetValue() * 1000L));
         }
 
-        // Set the game configuration in the data
-        data.setGameConfiguration(wordleConfig);
-
         return data;
     }
 
@@ -172,4 +172,12 @@ public class WordleGame implements GameLogic {
     public PlayerStats createInitialStats(GamePlayer player, boolean isHost) {
         return new WordlePlayerStats(player, isHost);
     }
+
+    @Override
+    public List<GameModeDTO.ModeOption> getAvailableModes() {
+        return Arrays.stream(WordleGameMode.values())
+                .map(mode -> new GameModeDTO.ModeOption(mode.name(), mode.getDisplayName()))
+                .collect(Collectors.toList());
+    }
+
 }

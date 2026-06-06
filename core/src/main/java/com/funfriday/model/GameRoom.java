@@ -1,12 +1,14 @@
 package com.funfriday.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.funfriday.dto.GameModeDTO;
 import com.funfriday.factory.GameFactory;
 import com.funfriday.service.GameLogic;
 import lombok.Getter;
 import lombok.Setter;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -23,6 +25,7 @@ public class GameRoom {
     private Long startTime;
     private GamePlayer host;
     private GameFactory.GameType type;
+    private List<GameModeDTO.ModeOption> availableModes;
     private final Map<String, GamePlayer> playerMap = new ConcurrentHashMap<>();
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 
@@ -66,6 +69,7 @@ public class GameRoom {
 
             GameConfiguration config = this.gameLogic.parseConfiguration(parsePayload);
             GameData<?> initialGameData = this.gameLogic.initializeData(config);
+            ((GameData<GameConfiguration>) initialGameData).setGameConfiguration(config);
 
             Map<String, PlayerStats> freshScoreboard = new ConcurrentHashMap<>();
             for (GamePlayer player : this.playerMap.values()) {

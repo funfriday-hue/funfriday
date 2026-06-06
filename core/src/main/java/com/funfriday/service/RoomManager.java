@@ -82,6 +82,12 @@ public class RoomManager {
         String roomId = UUID.randomUUID().toString().substring(0, 6).toUpperCase();
         GameLogic logic = gameFactory.createGame(gameType); // Use injected factory instance
         GameRoom room = new GameRoom(roomId, playerId, hostName, logic, gameType);
+
+        // Store available modes in the room for easy access
+        if (logic instanceof GameModeProvider) {
+            room.setAvailableModes(((GameModeProvider) logic).getAvailableModes());
+        }
+
         activeRooms.put(roomId, room);
         roomExecutors.put(roomId, createRoomExecutor(roomId));
         return room;
