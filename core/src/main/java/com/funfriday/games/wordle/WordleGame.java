@@ -88,6 +88,7 @@ public class WordleGame implements GameLogic, GameModeProvider {
         // 1. Pull actual progress from data
         int currentProgress = wData.getPlayerProgress().getOrDefault(playerId, 0);
         wStats.setWordsCleared(currentProgress);
+        wStats.setScore(currentProgress);
 
         // 2. Increment TOTAL attempts (for the global leaderboard)
         wStats.setTotalAttempts(wStats.getTotalAttempts() + 1);
@@ -98,6 +99,8 @@ public class WordleGame implements GameLogic, GameModeProvider {
 
         // 4. Set fallback default if no mode was explicitly passed during initialization
         WordleGameMode activeMode = wData.getGameMode() != null ? wData.getGameMode() : WordleGameMode.WORD_10;
+
+        wStats.setCurrentWordAttempts(attemptsOnCurrentWord);
 
         // 5. Evaluate Strike-out Failure Conditions (Max 12 attempts per word)
         if (attemptsOnCurrentWord >= 12) {
@@ -110,6 +113,8 @@ public class WordleGame implements GameLogic, GameModeProvider {
                 return;
             }
         }
+
+
 
         // 6. Evaluate End-Game Status using type-safe Enum properties
         if (activeMode.getRuleType() == WordleGameMode.RuleType.TIME_ATTACK) {

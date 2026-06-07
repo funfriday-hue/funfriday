@@ -1,150 +1,133 @@
 package com.funfriday.service;
 
-import com.funfriday.model.GameData;
-import com.funfriday.model.GameRoom;
-import com.funfriday.model.GameStatus;
-import com.funfriday.model.PlayerStats;
+import com.funfriday.dto.RoomPublicView;
+import com.funfriday.model.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
+import java.util.Optional;
+import java.util.concurrent.*;
 
+/**
+ * Handles scheduling per-room timers (TIME_ATTACK mode).
+ * The scheduler submits finalization and public broadcasts to the room's single-thread executor
+ * to preserve ordering and thread-safety.
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class TimerGameManager {
 
     private final SimpMessagingTemplate messagingTemplate;
+    private final RoomViewFactory viewFactory;
 
+    // Scheduler used to enqueue periodic ticks (runs independently from room executors)
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(
-            Math.max(2, Runtime.getRuntime().availableProcessors()),
-            createTimerThreadFactory()
+            Math.max(1, Runtime.getRuntime().availableProcessors() / 2),
+            r -> {
+                Thread t = new Thread(r);
+                t.setName("timer-manager");
+                t.setDaemon(true);
+                return t;
+            }
     );
 
+    // Maps roomId -> ScheduledFuture so we can cancel when needed
     private final Map<String, ScheduledFuture<?>> roomTimers = new ConcurrentHashMap<>();
 
-    private ThreadFactory createTimerThreadFactory() {
-        return r -> {
-            Thread t = new Thread(r);
-            t.setName("timer-manager");
-            t.setDaemon(true);
-            return t;
-        };
-    }
-
     /**
-     * Schedule a timer for TIME_ATTACK mode. Broadcasts room state every second
-     * and finalizes the game when time expires.
+     * Schedule a per-room timer: it will post periodic ticks that submit tasks on the provided roomExecutor.
      *
-     * @param roomId           Room identifier
-     * @param room             GameRoom instance
-     * @param roomExecutor     Single-threaded executor for the room
-     * @param roomExecutors    Map of all room executors (to check if room still exists)
+     * @param roomId        room id
+     * @param room          current GameRoom instance (captures reference to be used on room executor)
+     * @param roomExecutor  the single-thread executor that owns the room state
+     * @param roomExecutors map of room executors (used to check if the room executor still exists)
      */
     public void scheduleGameTimer(String roomId, GameRoom room, ExecutorService roomExecutor, Map<String, ExecutorService> roomExecutors) {
-        GameData<?> gameData = room.getGameData();
-
-        if (gameData == null || gameData.getEndTimeMillis() <= 0) {
-            log.warn("Timer not scheduled for room {} - endTimeMillis not set", roomId);
+        GameData<?> gd = room.getGameData();
+        if (gd == null  || gd.getEndTimeMillis() <= 0) {
+            log.warn("Not scheduling timer for room {} — no endTimeMillis set", roomId);
             return;
         }
 
-        log.info("🕐 Scheduling timer for room {} - ends at {}", roomId, gameData.getEndTimeMillis());
+        // If an existing timer is present, cancel it first
+        ScheduledFuture<?> prev = roomTimers.remove(roomId);
+        if (prev != null) prev.cancel(false);
 
-        ScheduledFuture<?> sf = scheduler.scheduleAtFixedRate(() -> handleTimerTick(roomId, room, roomExecutor, roomExecutors), 0, 2, TimeUnit.SECONDS);
-
-        ScheduledFuture<?> previous = roomTimers.put(roomId, sf);
-        if (previous != null) {
-            previous.cancel(false);
-        }
-    }
-
-    /**
-     * Execute timer tick: broadcast state and finalize if time expired.
-     * This is submitted to the scheduler thread pool; actual mutations must run on room executor.
-     */
-    private void handleTimerTick(String roomId, GameRoom room, ExecutorService roomExecutor, Map<String, ExecutorService> roomExecutors) {
-        ExecutorService roomExec = roomExecutors.get(roomId);
-        if (roomExec == null || roomExec.isShutdown()) {
-            log.debug("Room {} executor not available, cancelling timer", roomId);
-            cancelTimer(roomId);
-            return;
-        }
-
-        roomExec.submit(() -> {
-            try {
-                GameData<?> d = room.getGameData();
-                if (d == null) {
-                    log.warn("GameData is null for room {}", roomId);
-                    cancelTimer(roomId);
-                    return;
-                }
-
-                long remaining = d.getRemainingSeconds();
-
-                // Broadcast current state
-//                messagingTemplate.convertAndSend("/topic/room/" + roomId, room);
-
-                // Check if time expired
-                if (remaining <= 0) {
-                    finalizeGame(roomId, room, d);
-                }
-            } catch (Exception e) {
-                log.error("Error in timer tick for room {}: {}", roomId, e.getMessage(), e);
+        ScheduledFuture<?> sf = scheduler.scheduleAtFixedRate(() -> {
+            // quick check: if the room executor is gone, cancel timer
+            ExecutorService exec = roomExecutors.get(roomId);
+            if (exec == null || exec.isShutdown()) {
+                cancelTimer(roomId);
+                return;
             }
-        });
-    }
 
-    /**
-     * Finalize the game when time expires: mark finished, update stats, broadcast, cancel timer.
-     */
-    private void finalizeGame(String roomId, GameRoom room, GameData<?> gameData) {
-        log.info("⏱ TIME_ATTACK expired for room {}", roomId);
+            // Submit actual tick work onto the room's single-thread executor
+            exec.submit(() -> {
+                try {
+                    GameData<?> data = room.getGameData();
+                    if (data == null) {
+                        cancelTimer(roomId);
+                        return;
+                    }
 
-        // Mark game as finished
-        gameData.setFinished(true);
-        room.setStatus(GameStatus.FINISHED);
+                    long remaining = data.getRemainingSeconds();
 
-        // Update stats for all players
-        try {
-            for (PlayerStats stats : gameData.getScoreBoard().values()) {
-                if (stats != null) {
-                    room.getGameLogic().updateStats(stats, gameData);
+                    // Broadcast public view to all subscribers (no private fields)
+//                    RoomPublicView publicView = viewFactory.buildPublicView(room);
+//                    messagingTemplate.convertAndSend("/topic/room/" + roomId, publicView);
+
+                    if (remaining <= 0) {
+                        // Mark finished and compute winner (based on current stats) — do not call per-player updateStats
+                        data.setFinished(true);
+                        room.getGameData().getScoreBoard().keySet().forEach(pid -> {;
+                            PlayerStats stats = data.getScoreBoard().get(pid);
+                            stats.setStatus(PlayerStatus.COMPLETED);
+                        });
+                        room.setStatus(GameStatus.FINISHED);
+
+
+                        // Compute winner deterministically from current scoreboard (ranking metric)
+                        Optional<PlayerStats> winnerOpt = data.getScoreBoard().values().stream()
+                                .filter(s -> s != null && s.getPlayer() != null)
+                                .max((a, b) -> Double.compare(a.getRankingMetric(), b.getRankingMetric()));
+
+                        winnerOpt.ifPresent(w -> data.setWinner(w.getPlayer()));
+
+                        // Broadcast final public view
+                        RoomPublicView finalView = viewFactory.buildPublicView(room);
+                        messagingTemplate.convertAndSend("/topic/room/" + roomId, finalView);
+
+                        // Cancel timer after finalization
+                        cancelTimer(roomId);
+                    }
+                } catch (Throwable t) {
+                    log.error("Error in timer tick for room {}: {}", roomId, t.getMessage(), t);
                 }
-            }
-        } catch (Exception e) {
-            log.error("Error updating stats for room {}: {}", roomId, e.getMessage(), e);
-        }
+            });
 
-        // Broadcast final state
-        messagingTemplate.convertAndSend("/topic/room/" + roomId, room);
+        }, 0, 1, TimeUnit.SECONDS); // 1-second ticks; adjust as needed
 
-        // Cancel the timer
-        cancelTimer(roomId);
+        roomTimers.put(roomId, sf);
+        log.info("Scheduled TIME_ATTACK timer for room {}, ends at {}", roomId, gd.getEndTimeMillis());
     }
 
     /**
-     * Cancel the scheduled timer for a room.
+     * Cancel any scheduled timer for a room.
      */
     public void cancelTimer(String roomId) {
         ScheduledFuture<?> sf = roomTimers.remove(roomId);
         if (sf != null) {
             sf.cancel(false);
-            log.debug("Timer cancelled for room {}", roomId);
+            log.debug("Cancelled timer for room {}", roomId);
         }
     }
 
     /**
-     * Shutdown all timers and scheduler (call on application shutdown).
+     * Shutdown scheduler (call on application shutdown).
      */
     public void shutdown() {
         roomTimers.values().forEach(sf -> {
@@ -152,6 +135,6 @@ public class TimerGameManager {
         });
         roomTimers.clear();
         scheduler.shutdown();
-        log.info("TimerManager shutdown complete");
+        log.info("TimerGameManager shutdown");
     }
 }

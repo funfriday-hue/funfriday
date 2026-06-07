@@ -1,10 +1,13 @@
 package com.funfriday.controller;
 
+import com.funfriday.dto.RoomPrivateView;
+import com.funfriday.dto.RoomPublicView;
 import com.funfriday.exception.InvalidGameMoveException;
 import com.funfriday.model.*;
 import com.funfriday.request.JoinRequest;
 import com.funfriday.request.StartRequest;
 import com.funfriday.service.RoomManager;
+import com.funfriday.service.RoomViewFactory;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageExceptionHandler;
 import org.springframework.messaging.handler.annotation.MessageMapping;
@@ -17,7 +20,6 @@ import org.springframework.stereotype.Controller;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.web.bind.annotation.CookieValue;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -30,7 +32,7 @@ public class GameWebSocketController {
 
     private final RoomManager roomService;
     private final SimpMessagingTemplate messagingTemplate;
-
+    private final RoomViewFactory viewFactory;
     /**
      * Handles any game-related move (Wordle guess, Quiz answer, etc.)
      * The @Payload GameAction is automatically deserialized into its subclass
@@ -52,8 +54,9 @@ public class GameWebSocketController {
                         log.warn("Error processing action for room {}: {}", roomId, ex.getMessage(), ex);
                         sendErrorMessage(roomId, action.getPlayerId(), "Action processing failed");
                     } else {
-                        broadcastRoomUpdate(roomId, updatedRoom);
-                    }
+                        broadcastRoomPublic(roomId, updatedRoom);
+                        // Private detailed state to the player who acted (and optionally to others individually if needed)
+                        sendPrivateRoomUpdate(roomId, updatedRoom, action.getPlayerId());                    }
                 });
 
     }
@@ -65,11 +68,22 @@ public class GameWebSocketController {
         GameRoom room = roomService.getRoom(roomId);
         if (room == null) {
             sendErrorMessage(roomId, request.getPlayerName(), "No Room Found");
+            return;
+        }
+
+        // Get or create playerId for this websocket session
+        String playerId = (String) headerAccessor.getSessionAttributes().get("playerId");
+        if (playerId == null) {
+            playerId = UUID.randomUUID().toString();
+            headerAccessor.getSessionAttributes().put("playerId", playerId);
         }
 
 
-        // Broadcast the updated room so the new player appears on everyone's screen
-        messagingTemplate.convertAndSend("/topic/room/" + roomId, room);
+        // Broadcast sanitized public view to everyone
+        broadcastRoomPublic(roomId, room);
+
+        // Send private view only to the joining player (so they receive their private data like attempts)
+        sendPrivateRoomUpdate(roomId, room, playerId);
     }
 
     @MessageMapping("/game/{roomId}/start")
@@ -84,7 +98,11 @@ public class GameWebSocketController {
         roomService.submitStartGame(roomId, playerId, request.getGameMode(), request.getGenericProperties())
                 .thenAccept(updatedRoom -> {
                     log.info("Game started in room {} by host {}", roomId, playerId);
-                    messagingTemplate.convertAndSend("/topic/room/" + roomId, updatedRoom);
+                    broadcastRoomPublic(roomId, updatedRoom);
+                    // Private detailed state to the player who acted (and optionally to others individually if needed)
+                    updatedRoom.getPlayerMap().keySet().forEach(pid ->
+                            sendPrivateRoomUpdate(roomId, updatedRoom, pid));
+
                 })
                 .exceptionally(ex -> {
                     log.warn("Error starting game in room {}: {}", roomId, ex.getMessage(), ex);
@@ -103,8 +121,18 @@ public class GameWebSocketController {
                 });
     }
 
-    private void broadcastRoomUpdate(String roomId, GameRoom room) {
-        messagingTemplate.convertAndSend("/topic/room/" + roomId, room);
+    // Broadcast safe public view to everyone
+    private void broadcastRoomPublic(String roomId, GameRoom room) {
+        RoomPublicView publicView = viewFactory.buildPublicView(room);
+        messagingTemplate.convertAndSend("/topic/room/" + roomId, publicView);
+    }
+
+    // Send private view to a single player (use per-player topic)
+    private void sendPrivateRoomUpdate(String roomId, GameRoom room, String playerId) {
+        RoomPrivateView privateView = viewFactory.buildPrivateView(room, playerId);
+        // Using per-player topic under the room — frontend should subscribe to this path:
+        messagingTemplate.convertAndSend("/topic/room/" + roomId + "/player/" + playerId + "/state", privateView);
+        // Alternatively use convertAndSendToUser(playerId, "/queue/room", privateView) if user destinations are configured
     }
 
     private void sendErrorMessage(String roomId, String playerId, String error) {
