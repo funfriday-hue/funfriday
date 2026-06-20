@@ -2,16 +2,19 @@ package com.funfriday.factory;
 
 import com.funfriday.games.suduko.SudokuGameHandler;
 import com.funfriday.games.wordle.WordleGame;
-import com.funfriday.games.wordle.WordleDictionary;
 import com.funfriday.service.GameLogic;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 public class GameFactory {
 
-    private final WordleDictionary wordleDictionary;
+    private final WordleGame wordleGame;
+    private final SudokuGameHandler sudokuGameHandler;
+
+    public GameFactory(WordleGame wordleGame, SudokuGameHandler sudokuGameHandler) {
+        this.wordleGame = wordleGame;
+        this.sudokuGameHandler = sudokuGameHandler;
+    }
 
     public enum GameType {
         WORDLE, SUDOKU
@@ -19,8 +22,8 @@ public class GameFactory {
 
     public GameLogic createGame(GameType type) {
         return switch (type) {
-            case WORDLE -> new WordleGame(wordleDictionary);
-            case SUDOKU -> new SudokuGameHandler();
+            case WORDLE -> wordleGame;
+            case SUDOKU -> sudokuGameHandler;
             default -> throw new IllegalArgumentException("Unknown game type: " + type);
         };
     }

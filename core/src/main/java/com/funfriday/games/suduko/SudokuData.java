@@ -4,9 +4,8 @@ import com.funfriday.model.GameData;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.util.HashMap;
-import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.Map;
 
 @Setter
 @Getter
@@ -17,11 +16,15 @@ public class SudokuData extends GameData<SudokuConfiguration> {
     // The initial board provided at the start (to know which cells are immutable)
     private int[][] initialBoard;
 
+    // The solved board for the puzzle
+    private int[][] solution;
+
     // Board size (9 or 6)
     private int boardSize;
 
-    public SudokuData(int[][] puzzle, int boardSize) {
+    public SudokuData(int[][] puzzle, int[][] solution, int boardSize) {
         this.initialBoard = puzzle;
+        this.solution = solution;
         this.boardSize = boardSize;
     }
 

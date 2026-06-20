@@ -19,6 +19,7 @@ public class WordleData extends GameData<WordleConfiguration> {
     private WordleGameMode gameMode;
 
 
+
     // Helper to get current word for a specific player
     public String getCurrentTargetForPlayer(String playerId) {
         int index = playerProgress.getOrDefault(playerId, 0);

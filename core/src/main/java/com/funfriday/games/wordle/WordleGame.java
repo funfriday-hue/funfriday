@@ -103,7 +103,7 @@ public class WordleGame implements GameLogic, GameModeProvider {
         wStats.setCurrentWordAttempts(attemptsOnCurrentWord);
 
         // 5. Evaluate Strike-out Failure Conditions (Max 12 attempts per word)
-        if (attemptsOnCurrentWord >= 12) {
+        if (attemptsOnCurrentWord >= 6) {
             boolean lastAttemptWasSuccess = !currentWordAttempts.isEmpty() &&
                     Arrays.stream(currentWordAttempts.get(attemptsOnCurrentWord - 1).getResult())
                             .allMatch(r -> r == WordleGuessResult.GREEN);

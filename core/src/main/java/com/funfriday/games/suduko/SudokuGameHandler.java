@@ -1,5 +1,7 @@
 package com.funfriday.games.suduko;
 
+import com.funfriday.db.dao.SudokuDao;
+import com.funfriday.db.model.SudokuPuzzle;
 import com.funfriday.dto.GameModeDTO;
 import com.funfriday.model.*;
 import com.funfriday.service.GameLogic;
@@ -7,6 +9,7 @@ import com.funfriday.service.GameModeProvider;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -15,38 +18,29 @@ import java.util.Map;
 @Component
 public class SudokuGameHandler implements GameLogic, GameModeProvider {
 
-    // Sample 9x9 puzzle
-    private static final int[][] PUZZLE_9x9 = {
-            {5, 3, 0, 0, 7, 0, 0, 0, 0},
-            {6, 0, 0, 1, 9, 5, 0, 0, 0},
-            {0, 9, 8, 0, 0, 0, 0, 6, 0},
-            {8, 0, 0, 0, 6, 0, 0, 0, 3},
-            {4, 0, 0, 8, 0, 3, 0, 0, 1},
-            {7, 0, 0, 0, 2, 0, 0, 0, 6},
-            {0, 6, 0, 0, 0, 0, 2, 8, 0},
-            {0, 0, 0, 4, 1, 9, 0, 0, 5},
-            {0, 0, 0, 0, 8, 0, 0, 7, 9}
-    };
+    private final SudokuDao sudokuDao;
 
-    // Sample 6x6 puzzle
-// Grid layout (0 represents empty)
-    private static final int[][] PUZZLE_6x6 = {
-            {6, 2, 0, 5, 0, 3},
-            {0, 0, 0, 0, 0, 0},
-            {5, 0, 0, 0, 3, 0},
-            {0, 6, 0, 0, 2, 0},
-            {0, 0, 0, 3, 4, 6},
-            {3, 0, 6, 0, 0, 0}
-    };
+    public SudokuGameHandler(SudokuDao sudokuDao) {
+        this.sudokuDao = sudokuDao;
+    }
 
     @Override
     public GameData<?> initializeData(GameConfiguration configuration) {
         SudokuConfiguration sConfig = (SudokuConfiguration) configuration;
         SudokuGameMode mode = sConfig.getGameMode();
+        int boardSize = mode.getSize();
 
-        int[][] puzzle = mode == SudokuGameMode.SUDOKU_6X6 ? PUZZLE_6x6 : PUZZLE_9x9;
-        SudokuData data = new SudokuData(puzzle, mode.getSize());
-        return data;
+        try {
+            SudokuPuzzle puzzle = sudokuDao.selectRandomBySize(boardSize)
+                    .orElseThrow(() -> new IllegalStateException("No Sudoku puzzle found for size " + boardSize));
+            return new SudokuData(
+                    parseGrid(puzzle.getGrid(), boardSize),
+                    parseGrid(puzzle.getSolution(), boardSize),
+                    boardSize
+            );
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to load Sudoku puzzle for size " + boardSize, e);
+        }
     }
 
     @Override
@@ -96,10 +90,12 @@ public class SudokuGameHandler implements GameLogic, GameModeProvider {
         int[][] board = sData.getPlayerBoards().get(playerId);
         if (board == null) return;
 
-        // 1. Calculate metrics specific to board size
-        int rows = countSolvedRows(board, boardSize);
-        int cols = countSolvedCols(board, boardSize);
-        int boxes = countSolvedBoxes(board, boardSize, sData.getGameConfiguration().getGameMode());
+        int[][] solution = sData.getSolution();
+
+        // 1. Calculate metrics against the puzzle solution
+        int rows = countSolvedRows(board, solution, boardSize);
+        int cols = countSolvedCols(board, solution, boardSize);
+        int boxes = countSolvedBoxes(board, solution, boardSize, sData.getGameConfiguration().getGameMode());
         int totalSolvedUnits = rows + cols + boxes;
 
         // 2. Set individual fields
@@ -125,41 +121,75 @@ public class SudokuGameHandler implements GameLogic, GameModeProvider {
         }
     }
 
-    private int countSolvedRows(int[][] board, int boardSize) {
+    private int countSolvedRows(int[][] board, int[][] solution, int boardSize) {
         int count = 0;
         for (int r = 0; r < boardSize; r++) {
-            if (SudokuLogicEngine.isUnitValid(board[r], boardSize)) count++;
+            boolean solved = true;
+            for (int c = 0; c < boardSize; c++) {
+                if (board[r][c] != solution[r][c]) {
+                    solved = false;
+                    break;
+                }
+            }
+            if (solved) count++;
         }
         return count;
     }
 
-    private int countSolvedCols(int[][] board, int boardSize) {
+    private int countSolvedCols(int[][] board, int[][] solution, int boardSize) {
         int count = 0;
         for (int c = 0; c < boardSize; c++) {
-            int[] column = new int[boardSize];
-            for (int r = 0; r < boardSize; r++) column[r] = board[r][c];
-            if (SudokuLogicEngine.isUnitValid(column, boardSize)) count++;
+            boolean solved = true;
+            for (int r = 0; r < boardSize; r++) {
+                if (board[r][c] != solution[r][c]) {
+                    solved = false;
+                    break;
+                }
+            }
+            if (solved) count++;
         }
         return count;
     }
 
-    private int countSolvedBoxes(int[][] board, int boardSize, SudokuGameMode mode) {
+    private int countSolvedBoxes(int[][] board, int[][] solution, int boardSize, SudokuGameMode mode) {
         int row = mode.getRow();
         int col = mode.getCol();
         int count = 0;
         for (int b = 0; b < boardSize; b++) {
-            int[] box = new int[boardSize];
             int rOffset = (b / row) * row;
             int cOffset = (b % row) * col;
-            int idx = 0;
+            boolean solved = true;
             for (int r = 0; r < row; r++) {
                 for (int c = 0; c < col; c++) {
-                    box[idx++] = board[rOffset + r][cOffset + c];
+                    if (board[rOffset + r][cOffset + c] != solution[rOffset + r][cOffset + c]) {
+                        solved = false;
+                        break;
+                    }
                 }
+                if (!solved) break;
             }
-            if (SudokuLogicEngine.isUnitValid(box, boardSize)) count++;
+            if (solved) count++;
         }
         return count;
+    }
+
+    private int[][] parseGrid(String encodedGrid, int boardSize) {
+        int expectedLength = boardSize * boardSize;
+        if (encodedGrid == null || encodedGrid.length() != expectedLength) {
+            throw new IllegalArgumentException(
+                    "Expected Sudoku grid length " + expectedLength + " for size " + boardSize
+            );
+        }
+
+        int[][] grid = new int[boardSize][boardSize];
+        for (int i = 0; i < expectedLength; i++) {
+            char value = encodedGrid.charAt(i);
+            if (!Character.isDigit(value)) {
+                throw new IllegalArgumentException("Sudoku grid contains non-digit value at index " + i);
+            }
+            grid[i / boardSize][i % boardSize] = Character.digit(value, 10);
+        }
+        return grid;
     }
 
     @Override

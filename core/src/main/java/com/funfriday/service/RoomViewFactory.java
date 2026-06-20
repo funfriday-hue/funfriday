@@ -146,6 +146,9 @@ public class RoomViewFactory {
         if (data instanceof WordleData w) {
             privateGameData.put("playerAttempts", w.getPlayerAttempts().getOrDefault(playerId, Collections.emptyList()));
             privateGameData.put("playerProgress", w.getPlayerProgress().getOrDefault(playerId, 0));
+            if (selfStats != null && PlayerStatus.FAILED.equals(selfStats.getStatus())) {
+                privateGameData.put("targetWord", w.getCurrentTargetForPlayer(playerId));
+            }
         } else if (data instanceof SudokuData s) {
             privateGameData.put("playerBoard", s.getPlayerBoards().get(playerId));
             privateGameData.put("initialBoard", s.getInitialBoard());
