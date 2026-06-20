@@ -11,6 +11,7 @@
     <modules>
         <module>core</module>
         <module>db</module>
+        <module>generator</module>
     </modules>
 
     <properties>
