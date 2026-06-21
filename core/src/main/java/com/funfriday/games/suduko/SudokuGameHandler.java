@@ -96,7 +96,8 @@ public class SudokuGameHandler implements GameLogic, GameModeProvider {
         int rows = countSolvedRows(board, solution, boardSize);
         int cols = countSolvedCols(board, solution, boardSize);
         int boxes = countSolvedBoxes(board, solution, boardSize, sData.getGameConfiguration().getGameMode());
-        int totalSolvedUnits = rows + cols + boxes;
+        int digits = countDigitSolved(board, solution, boardSize);
+        int totalSolvedUnits = rows + cols + boxes + digits;
 
         // 2. Set individual fields
         sStats.setRowsSolved(rows);
@@ -119,6 +120,25 @@ public class SudokuGameHandler implements GameLogic, GameModeProvider {
         if (sStats.getStatus() == PlayerStatus.ACTIVE) {
             sStats.setTotalTimeMillis(System.currentTimeMillis() - data.getStartTime());
         }
+    }
+
+    private int countDigitSolved(int[][] board, int[][] solution, int boardSize) {
+        int count = 0;
+        for (int i = 0; i < boardSize; i++) {
+            int curr = 0;
+            for (int r = 0; r < boardSize; r++) {
+                for (int c = 0; c < boardSize; c++) {
+                    if (board[r][c] == solution[r][c] && board[r][c] == i + 1) {
+                        curr++;
+                    }
+                }
+            }
+            if (curr == boardSize) {
+                count++;
+            }
+        }
+
+        return count;
     }
 
     private int countSolvedRows(int[][] board, int[][] solution, int boardSize) {

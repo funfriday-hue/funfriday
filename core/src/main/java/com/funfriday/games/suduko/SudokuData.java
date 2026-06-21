@@ -36,4 +36,5 @@ public class SudokuData extends GameData<SudokuConfiguration> {
         }
         playerBoards.put(playerId, boardCopy);
     }
+
 }

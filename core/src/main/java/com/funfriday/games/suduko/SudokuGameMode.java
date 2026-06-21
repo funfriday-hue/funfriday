@@ -4,8 +4,8 @@ import lombok.Getter;
 
 @Getter
 public enum SudokuGameMode {
-    SUDOKU_9X9(9, 3, 3,27),
-    SUDOKU_6X6(6, 2, 3, 18);
+    SUDOKU_9X9(9, 3, 3,36),
+    SUDOKU_6X6(6, 2, 3, 24);
 
     private final int size;
     // 9 or 6

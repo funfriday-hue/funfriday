@@ -12,6 +12,7 @@ public class SudokuPlayerStats extends PlayerStats {
     private int columnsSolved; // 0 to 9
     private int boxesSolved;   // 0 to 9
     private double progress;   // (totalSolved / 27.0) * 100
+    private int digitSolved;
 
     private long totalTimeMillis = 0;
 
@@ -20,7 +21,9 @@ public class SudokuPlayerStats extends PlayerStats {
         this.rowsSolved = 0;
         this.columnsSolved = 0;
         this.boxesSolved = 0;
+        this.digitSolved = 0;
     }
+
 
     @Override
     public double getRankingMetric() {

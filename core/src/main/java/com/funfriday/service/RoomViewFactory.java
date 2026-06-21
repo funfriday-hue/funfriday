@@ -152,6 +152,9 @@ public class RoomViewFactory {
         } else if (data instanceof SudokuData s) {
             privateGameData.put("playerBoard", s.getPlayerBoards().get(playerId));
             privateGameData.put("initialBoard", s.getInitialBoard());
+            if (selfStats != null && (PlayerStatus.GIVEN_UP.equals(selfStats.getStatus()) || PlayerStatus.COMPLETED.equals(selfStats.getStatus()))) {
+                privateGameData.put("targetBoard", s.getSolution());
+            }
         }
 
         Object publicGameData = publicView.getGameSpecificPublicData();
