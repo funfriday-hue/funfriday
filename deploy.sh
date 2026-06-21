@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -e
-
+git pull
 mvn clean install
 cd core
 mvn clean package -DskipTests
