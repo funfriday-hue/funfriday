@@ -3,6 +3,7 @@ package com.funfriday.model;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.funfriday.dto.GameModeDTO;
 import com.funfriday.factory.GameFactory;
+import com.funfriday.games.quizroyale.QuizRoyaleData;
 import com.funfriday.service.GameLogic;
 import lombok.Getter;
 import lombok.Setter;
@@ -77,6 +78,11 @@ public class GameRoom {
                 freshScoreboard.put(player.getId(), stats);
             }
             initialGameData.setScoreBoard(freshScoreboard);
+            if (initialGameData instanceof QuizRoyaleData quizData) {
+                quizData.setTurnOrder(new java.util.ArrayList<>(this.playerMap.keySet()));
+                quizData.setCurrentPlayerIndex(0);
+                quizData.setChronologyEligiblePlayerIds(new java.util.ArrayList<>(this.playerMap.keySet()));
+            }
 
             this.gameData = initialGameData;
             this.startTime = System.currentTimeMillis();

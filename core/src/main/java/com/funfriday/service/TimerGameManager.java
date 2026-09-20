@@ -1,6 +1,8 @@
 package com.funfriday.service;
 
 import com.funfriday.dto.RoomPublicView;
+import com.funfriday.games.quizroyale.QuizRoyaleAction;
+import com.funfriday.games.quizroyale.QuizRoyaleData;
 import com.funfriday.model.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -113,6 +115,74 @@ public class TimerGameManager {
 
         roomTimers.put(roomId, sf);
         log.info("Scheduled TIME_ATTACK timer for room {}, ends at {}", roomId, gd.getEndTimeMillis());
+    }
+
+    /**
+     * Schedules one authoritative Quiz Royale turn timeout. Each turn replaces the prior scheduled
+     * task, so a correct answer cannot leave an old timeout waiting to strike that player later.
+     */
+    public void scheduleQuizRoyaleTurnTimer(String roomId, GameRoom room, ExecutorService roomExecutor, Map<String, ExecutorService> roomExecutors) {
+        if (!(room.getGameData() instanceof QuizRoyaleData quizData)
+                || room.getStatus() != GameStatus.IN_PROGRESS
+                || quizData.getGameConfiguration().getTurnSeconds() <= 0) {
+            cancelTimer(roomId);
+            return;
+        }
+
+        cancelTimer(roomId);
+        long scheduledTurnStartedAt = quizData.getTurnStartedAtMillis();
+        long deadline = scheduledTurnStartedAt + quizData.getGameConfiguration().getTurnSeconds() * 1000L;
+        long delayMillis = Math.max(1, deadline - System.currentTimeMillis());
+
+        ScheduledFuture<?> future = scheduler.schedule(() -> {
+            ExecutorService executor = roomExecutors.get(roomId);
+            if (executor == null || executor.isShutdown()) {
+                cancelTimer(roomId);
+                return;
+            }
+
+            executor.submit(() -> {
+                try {
+                    if (room.getStatus() != GameStatus.IN_PROGRESS || !(room.getGameData() instanceof QuizRoyaleData currentData)) {
+                        cancelTimer(roomId);
+                        return;
+                    }
+                    // A correct answer or another event already reset the turn; this old task is stale.
+                    if (currentData.getTurnStartedAtMillis() != scheduledTurnStartedAt) return;
+
+                    long currentDeadline = currentData.getTurnStartedAtMillis()
+                            + currentData.getGameConfiguration().getTurnSeconds() * 1000L;
+                    if (System.currentTimeMillis() < currentDeadline) {
+                        scheduleQuizRoyaleTurnTimer(roomId, room, roomExecutor, roomExecutors);
+                        return;
+                    }
+
+                    String timedOutPlayerId = currentData.getTurnOrder().isEmpty() ? null
+                            : currentData.getTurnOrder().get(currentData.getCurrentPlayerIndex());
+                    if (timedOutPlayerId == null) {
+                        cancelTimer(roomId);
+                        return;
+                    }
+
+                    QuizRoyaleAction timeoutAction = new QuizRoyaleAction();
+                    timeoutAction.setType("QUIZ_TIMEOUT");
+                    timeoutAction.setPlayerId(timedOutPlayerId);
+                    room.handlePlayerAction(timeoutAction);
+                    messagingTemplate.convertAndSend("/topic/room/" + roomId, viewFactory.buildPublicView(room));
+
+                    if (room.getStatus() == GameStatus.IN_PROGRESS) {
+                        scheduleQuizRoyaleTurnTimer(roomId, room, roomExecutor, roomExecutors);
+                    } else {
+                        cancelTimer(roomId);
+                    }
+                } catch (Throwable t) {
+                    log.error("Error processing Quiz Royale timeout for room {}: {}", roomId, t.getMessage(), t);
+                }
+            });
+        }, delayMillis, TimeUnit.MILLISECONDS);
+
+        roomTimers.put(roomId, future);
+        log.debug("Scheduled Quiz Royale timer for room {} in {}ms", roomId, delayMillis);
     }
 
     /**

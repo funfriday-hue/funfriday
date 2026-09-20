@@ -1,6 +1,7 @@
 package com.funfriday.service;
 
 import com.funfriday.factory.GameFactory;
+import com.funfriday.games.quizroyale.QuizRoyaleData;
 import com.funfriday.model.GameAction;
 import com.funfriday.model.GameData;
 import com.funfriday.model.GameRoom;
@@ -117,6 +118,9 @@ public class RoomManager {
                     return;
                 }
                 room.handlePlayerAction(action);
+                if (room.getGameData() instanceof QuizRoyaleData) {
+                    timerManager.scheduleQuizRoyaleTurnTimer(roomId, room, exec, roomExecutors);
+                }
                 cf.complete(room);
             } catch (Throwable t) {
                 cf.completeExceptionally(t);
@@ -146,7 +150,9 @@ public class RoomManager {
 
                 // If TIME_ATTACK or other timed mode, schedule the timer
                 GameData<?> gameData = room.getGameData();
-                if (gameData != null && gameData.getEndTimeMillis() > 0) {
+                if (gameData instanceof QuizRoyaleData) {
+                    timerManager.scheduleQuizRoyaleTurnTimer(roomId, room, exec, roomExecutors);
+                } else if (gameData != null && gameData.getEndTimeMillis() > 0) {
                     timerManager.scheduleGameTimer(roomId, room, exec, roomExecutors);
                 }
 

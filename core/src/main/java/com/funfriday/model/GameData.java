@@ -2,6 +2,8 @@ package com.funfriday.model;
 
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.funfriday.games.dobble.DobbleData;
+import com.funfriday.games.quizroyale.QuizRoyaleData;
 import com.funfriday.games.suduko.SudokuData;
 import com.funfriday.games.wordle.WordleData;
 import lombok.Data;
@@ -14,7 +16,9 @@ import java.util.concurrent.ConcurrentHashMap;
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
 @JsonSubTypes(value = {
         @JsonSubTypes.Type(value = WordleData.class, name = "WORDLE"),
-        @JsonSubTypes.Type(value = SudokuData.class, name = "SUDOKU")
+        @JsonSubTypes.Type(value = SudokuData.class, name = "SUDOKU"),
+        @JsonSubTypes.Type(value = DobbleData.class, name = "DOBBLE"),
+        @JsonSubTypes.Type(value = QuizRoyaleData.class, name = "QUIZ_ROYALE")
 })
 public abstract class GameData<T extends GameConfiguration> {
     // The central map: Player Name -> Their Stats

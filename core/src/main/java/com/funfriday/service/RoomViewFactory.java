@@ -2,6 +2,10 @@ package com.funfriday.service;
 
 import com.funfriday.dto.RoomPrivateView;
 import com.funfriday.dto.RoomPublicView;
+import com.funfriday.games.dobble.DobbleData;
+import com.funfriday.games.dobble.DobblePlayerStats;
+import com.funfriday.games.quizroyale.QuizRoyaleData;
+import com.funfriday.games.quizroyale.QuizRoyalePlayerStats;
 import com.funfriday.games.suduko.SudokuData;
 import com.funfriday.games.suduko.SudokuPlayerStats;
 import com.funfriday.games.wordle.WordleData;
@@ -51,6 +55,19 @@ public class RoomViewFactory {
                             statMap.put("timeElapsedSeconds", 0L);
                         }
                     }
+                    // Dobble-specific metrics
+                    else if (data instanceof DobbleData) {
+                        if (stats instanceof DobblePlayerStats dps) {
+                            statMap.put("matchesFound", dps.getMatchesFound());
+                            statMap.put("totalResponseTimeMillis", dps.getTotalResponseTimeMillis());
+                        }
+                    }
+                    else if (data instanceof QuizRoyaleData) {
+                        if (stats instanceof QuizRoyalePlayerStats qps) {
+                            statMap.put("strikes", qps.getStrikes());
+                            statMap.put("correctAnswers", qps.getCorrectAnswers());
+                        }
+                    }
                     // Sudoku-specific metrics
                     else if (data instanceof SudokuData sdata) {
                         if (stats instanceof SudokuPlayerStats sps) {
@@ -92,6 +109,50 @@ public class RoomViewFactory {
             if (data.getEndTimeMillis() > 0) {
                 meta.put("remainingSeconds", data.getRemainingSeconds());
             }
+            if (data instanceof DobbleData d) {
+                meta.put("gameMode", d.getGameMode().name());
+                meta.put("lastMatchPlayerId", d.getLastMatchPlayerId());
+                meta.put("lastMatchSymbol", d.getLastMatchSymbol());
+                if (d.getGameMode().name().equals("CLASSIC")) {
+                    meta.put("centerCard", d.getCenterCard());
+                    meta.put("currentCard", d.getCurrentCard());
+                    meta.put("currentCardIndex", d.getCurrentCardIndex());
+                    meta.put("totalCards", d.getOuterCards().size());
+                    meta.put("currentRound", (d.getCurrentCardIndex() / 5) + 1);
+                    meta.put("cardsPerRound", 5);
+                    meta.put("currentCardSolved", d.isCurrentCardSolved());
+                } else if (d.getGameMode().name().equals("PAIR_RUSH")) {
+                    int start = d.getCurrentRoundIndex() * 2;
+                    meta.put("currentRound", d.getCurrentRoundIndex() + 1);
+                    meta.put("totalRounds", 25);
+                    meta.put("leftCard", start < d.getPairCards().size() ? d.getPairCards().get(start) : null);
+                    meta.put("rightCard", start + 1 < d.getPairCards().size() ? d.getPairCards().get(start + 1) : null);
+                } else {
+                    meta.put("currentRound", d.getCurrentRoundIndex() + 1);
+                    meta.put("totalRounds", 12);
+                    meta.put("visibleCards", d.getTripleBoard());
+                }
+            }
+            if (data instanceof QuizRoyaleData q) {
+                meta.put("question", q.getQuestion().getPrompt());
+                meta.put("category", q.getQuestion().getCategory().name());
+                meta.put("questionType", q.getQuestion().getType().name());
+                meta.put("playMode", q.getGameConfiguration().getPlayMode().name());
+                meta.put("acceptedAnswers", q.getAcceptedAnswers());
+                meta.put("currentPlayerId", q.getTurnOrder().isEmpty() ? null : q.getTurnOrder().get(q.getCurrentPlayerIndex()));
+                meta.put("timeoutCoordinatorId", q.getTurnOrder().stream()
+                        .filter(id -> q.getScoreBoard().get(id).getStatus() == PlayerStatus.ACTIVE)
+                        .findFirst().orElse(null));
+                meta.put("allPlayAnsweredPlayerIds", q.getAllPlayAnsweredPlayerIds());
+                meta.put("chronologyPassedPlayerIds", q.getChronologyPassedPlayerIds());
+                meta.put("turnStartedAtMillis", q.getTurnStartedAtMillis());
+                meta.put("turnSeconds", q.getGameConfiguration().getTurnSeconds());
+                meta.put("strikeLimit", q.getGameConfiguration().getStrikeLimit());
+                meta.put("lastEvent", q.getLastEvent());
+                if (q.getQuestion().getType().name().equals("CHRONOLOGY") && q.getChronologyIndex() < q.getQuestion().getChronologyHints().size()) {
+                    meta.put("chronologyHint", q.getQuestion().getChronologyHints().get(q.getChronologyIndex()));
+                }
+            }
             publicGameData = meta;
         }
 
@@ -116,6 +177,16 @@ public class RoomViewFactory {
                 selfStatMap.put("tries", w.getPlayerAttempts().getOrDefault(playerId, Collections.emptyList()).size());
                 selfStatMap.put("solved", false);
                 selfStatMap.put("timeElapsedSeconds", 0L);
+            }
+        } else if (data instanceof DobbleData) {
+            if (selfStats instanceof DobblePlayerStats dps) {
+                selfStatMap.put("matchesFound", dps.getMatchesFound());
+                selfStatMap.put("totalResponseTimeMillis", dps.getTotalResponseTimeMillis());
+            }
+        } else if (data instanceof QuizRoyaleData) {
+            if (selfStats instanceof QuizRoyalePlayerStats qps) {
+                selfStatMap.put("strikes", qps.getStrikes());
+                selfStatMap.put("correctAnswers", qps.getCorrectAnswers());
             }
         } else if (data instanceof SudokuData s) {
             if (selfStats instanceof SudokuPlayerStats sps) {

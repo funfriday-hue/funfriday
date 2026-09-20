@@ -2,6 +2,8 @@ package com.funfriday.model;
 
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.funfriday.games.dobble.DobblePlayerStats;
+import com.funfriday.games.quizroyale.QuizRoyalePlayerStats;
 import com.funfriday.games.suduko.SudokuPlayerStats;
 import com.funfriday.games.wordle.WordlePlayerStats;
 import lombok.Data;
@@ -13,7 +15,9 @@ import lombok.NoArgsConstructor;
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
 @JsonSubTypes({
         @JsonSubTypes.Type(value = WordlePlayerStats.class, name = "WORDLE"),
-        @JsonSubTypes.Type(value = SudokuPlayerStats.class, name = "SUDOKU")
+        @JsonSubTypes.Type(value = SudokuPlayerStats.class, name = "SUDOKU"),
+        @JsonSubTypes.Type(value = DobblePlayerStats.class, name = "DOBBLE"),
+        @JsonSubTypes.Type(value = QuizRoyalePlayerStats.class, name = "QUIZ_ROYALE")
 })
 public abstract class PlayerStats {
     private GamePlayer player;
