@@ -219,9 +219,21 @@ public class QuizRoyaleGame implements GameLogic, GameModeProvider {
     private QuizAnswer expectedAnswer(QuizRoyaleData data, String submittedAnswer) {
         if (data.getQuestion().getType() == QuizQuestionType.CHRONOLOGY) {
             QuizAnswer expected = data.getChronologyIndex() < data.getQuestion().getAnswers().size() ? data.getQuestion().getAnswers().get(data.getChronologyIndex()) : null;
-            return expected != null && answerMatcher.matches(submittedAnswer, expected) ? expected : null;
+            return expected != null && (answerMatcher.matches(submittedAnswer, expected)
+                    || answerMatcher.matchesShortForm(submittedAnswer, expected)) ? expected : null;
         }
-        return data.getQuestion().getAnswers().stream().filter(answer -> !data.getAcceptedAnswers().contains(answer.getValue())).filter(answer -> answerMatcher.matches(submittedAnswer, answer)).findFirst().orElse(null);
+        List<QuizAnswer> remainingAnswers = data.getQuestion().getAnswers().stream()
+                .filter(answer -> !data.getAcceptedAnswers().contains(answer.getValue()))
+                .toList();
+        Optional<QuizAnswer> directMatch = remainingAnswers.stream()
+                .filter(answer -> answerMatcher.matches(submittedAnswer, answer))
+                .findFirst();
+        if (directMatch.isPresent()) return directMatch.get();
+
+        List<QuizAnswer> shortFormMatches = remainingAnswers.stream()
+                .filter(answer -> answerMatcher.matchesShortForm(submittedAnswer, answer))
+                .toList();
+        return shortFormMatches.size() == 1 ? shortFormMatches.getFirst() : null;
     }
     private void finish(QuizRoyaleData data) { data.setFinished(true); data.getScoreBoard().values().forEach(stats -> { if (stats.getStatus() == PlayerStatus.ACTIVE) stats.setStatus(PlayerStatus.COMPLETED); }); }
 

@@ -2,6 +2,7 @@ package com.funfriday.games.quizroyale;
 
 import org.springframework.stereotype.Component;
 import java.text.Normalizer;
+import java.util.Arrays;
 import java.util.Locale;
 
 @Component
@@ -11,6 +12,23 @@ public class AnswerMatcher {
         if (input.isBlank()) return false;
         if (similar(input, normalize(answer.getValue()))) return true;
         return answer.getAliases() != null && answer.getAliases().stream().anyMatch(alias -> similar(input, normalize(alias)));
+    }
+
+    /**
+     * Accept a recognisable part of a multi-word answer, e.g. "de Silva" for
+     * "Aravinda de Silva" or "Strokes" for "Ben Stokes".  Callers must make
+     * sure this produces a unique answer in a list question before accepting it.
+     */
+    public boolean matchesShortForm(String submitted, QuizAnswer answer) {
+        String input = normalize(submitted);
+        if (input.length() < 4 || answer == null || answer.getValue() == null) return false;
+
+        String[] words = answer.getValue().split("\\s+");
+        for (int start = 0; start < words.length; start++) {
+            String shortForm = normalize(String.join(" ", Arrays.copyOfRange(words, start, words.length)));
+            if (shortForm.length() >= 4 && similar(input, shortForm)) return true;
+        }
+        return false;
     }
     public String normalize(String value) {
         return value == null ? "" : Normalizer.normalize(value, Normalizer.Form.NFD).replaceAll("\\p{M}", "")
