@@ -149,6 +149,11 @@ public class RoomViewFactory {
                 meta.put("turnSeconds", q.getGameConfiguration().getTurnSeconds());
                 meta.put("strikeLimit", q.getGameConfiguration().getStrikeLimit());
                 meta.put("lastEvent", q.getLastEvent());
+                if (q.isFinished()) {
+                    meta.put("allAnswers", q.getQuestion().getAnswers().stream().map(answer -> answer.getValue()).toList());
+                    meta.put("allAnswerHints", q.getQuestion().getChronologyHints());
+                    meta.put("answeredAnswerIndexes", q.getAnsweredAnswerIndexes());
+                }
                 if (q.getQuestion().getType().name().equals("CHRONOLOGY") && q.getChronologyIndex() < q.getQuestion().getChronologyHints().size()) {
                     meta.put("chronologyHint", q.getQuestion().getChronologyHints().get(q.getChronologyIndex()));
                 }

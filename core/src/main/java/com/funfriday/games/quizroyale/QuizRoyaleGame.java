@@ -58,6 +58,7 @@ public class QuizRoyaleGame implements GameLogic, GameModeProvider {
         }
 
         data.getAcceptedAnswers().add(expected.getValue());
+        markAnswerAsAnswered(data, expected);
         QuizRoyalePlayerStats stats = (QuizRoyalePlayerStats) data.getScoreBoard().get(action.getPlayerId());
         stats.setCorrectAnswers(stats.getCorrectAnswers() + 1);
         stats.setScore(stats.getCorrectAnswers());
@@ -88,6 +89,7 @@ public class QuizRoyaleGame implements GameLogic, GameModeProvider {
         QuizAnswer expected = expectedAnswer(data, action.getAnswer());
         if (expected == null) { applyAllPlayStrike(data, action.getPlayerId(), "Incorrect answer."); return; }
         data.getAcceptedAnswers().add(expected.getValue());
+        markAnswerAsAnswered(data, expected);
         if (!data.getAllPlayAnsweredPlayerIds().contains(action.getPlayerId())) data.getAllPlayAnsweredPlayerIds().add(action.getPlayerId());
         QuizRoyalePlayerStats stats = (QuizRoyalePlayerStats) data.getScoreBoard().get(action.getPlayerId());
         stats.setCorrectAnswers(stats.getCorrectAnswers() + 1);
@@ -194,8 +196,17 @@ public class QuizRoyaleGame implements GameLogic, GameModeProvider {
                 ? data.getQuestion().getChronologyHints().get(data.getChronologyIndex())
                 : "this item";
         data.getAcceptedAnswers().add(expected.getValue());
+        data.getRevealedAnswerIndexes().add(data.getChronologyIndex());
         data.setChronologyIndex(data.getChronologyIndex() + 1);
         data.setLastEvent(reason + " — " + expected.getValue() + " revealed for " + hint + ".");
+    }
+    private void markAnswerAsAnswered(QuizRoyaleData data, QuizAnswer answer) {
+        int answerIndex = data.getQuestion().getType() == QuizQuestionType.CHRONOLOGY
+                ? data.getChronologyIndex()
+                : data.getQuestion().getAnswers().indexOf(answer);
+        if (answerIndex >= 0 && !data.getAnsweredAnswerIndexes().contains(answerIndex)) {
+            data.getAnsweredAnswerIndexes().add(answerIndex);
+        }
     }
     private void resetTimer(QuizRoyaleData data) { data.setTurnStartedAtMillis(System.currentTimeMillis()); }
     private boolean shouldFinishAfterElimination(QuizRoyaleData data) {

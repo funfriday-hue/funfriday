@@ -15,6 +15,8 @@ public class QuizRoyaleData extends GameData<QuizRoyaleConfiguration> {
     private List<String> chronologyEligiblePlayerIds = new ArrayList<>();
     private List<String> chronologyPassedPlayerIds = new ArrayList<>();
     private List<String> acceptedAnswers = new ArrayList<>();
+    private List<Integer> answeredAnswerIndexes = new ArrayList<>();
+    private List<Integer> revealedAnswerIndexes = new ArrayList<>();
     private long turnStartedAtMillis;
     private String lastEvent;
     private List<String> allPlayAnsweredPlayerIds = new ArrayList<>();
