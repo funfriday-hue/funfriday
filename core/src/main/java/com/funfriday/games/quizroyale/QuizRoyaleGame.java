@@ -49,7 +49,7 @@ public class QuizRoyaleGame implements GameLogic, GameModeProvider {
 
         QuizAnswer expected = expectedAnswer(data, action.getAnswer());
         if (expected == null) {
-            data.setLastEvent("Incorrect answer — keep trying.");
+            applyStrike(data, action.getPlayerId(), "Incorrect answer.");
             return;
         }
         if (data.getQuestion().getType() != QuizQuestionType.CHRONOLOGY && data.getAcceptedAnswers().contains(expected.getValue())) {
