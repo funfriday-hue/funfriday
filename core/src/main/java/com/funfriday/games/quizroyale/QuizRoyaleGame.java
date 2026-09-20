@@ -238,7 +238,12 @@ public class QuizRoyaleGame implements GameLogic, GameModeProvider {
         return new QuizRoyaleConfiguration(category, QuizQuestionType.LIST, playMode, Math.max(1, Math.min(5, strikeLimit)), turnSeconds);
     }
     @Override public List<GameModeDTO.ModeOption> getAvailableModes() {
-        return List.of(new GameModeDTO.ModeOption("CRICKET", "Cricket · Random Question"));
+        return List.of(
+                new GameModeDTO.ModeOption("CRICKET", "Cricket"),
+                new GameModeDTO.ModeOption("FOOTBALL", "Football"),
+                new GameModeDTO.ModeOption("BOLLYWOOD", "Bollywood"),
+                new GameModeDTO.ModeOption("WWE", "WWE")
+        );
     }
 
     private QuizQuestion sampleQuestion(QuizCategory category, QuizQuestionType type) {
