@@ -10,8 +10,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.net.http.HttpTimeoutException;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
@@ -40,21 +42,55 @@ public class QuizDraftGenerator implements Generator {
 
         String category = CATEGORIES.get(random.nextInt(CATEGORIES.size()));
         String questionType = QUESTION_TYPES.get(random.nextInt(QUESTION_TYPES.size()));
-        String model = Optional.ofNullable(System.getenv("LLM_MODEL")).filter(value -> !value.isBlank()).orElse("gpt-4.1-mini");
-        GeneratedQuiz generated = requestQuestion(apiKey, model, category, questionType);
-        validate(generated, category, questionType);
+        generateWithFallback(apiKey, category, questionType);
+    }
 
-        List<QuizDraftAnswerRecord> answers = new ArrayList<>();
-        for (int index = 0; index < generated.answers().size(); index++) {
-            GeneratedAnswer answer = generated.answers().get(index);
-            answers.add(new QuizDraftAnswerRecord(0, answer.answer().trim(), index + 1,
-                    questionType.equals("CHRONOLOGY") ? answer.hint().trim() : null,
-                    sanitizeAliases(answer.aliases(), answer.answer())));
+    private String generateWithFallback(String apiKey, String category, String questionType) throws Exception {
+        Exception lastFailure = null;
+        for (String model : configuredModels()) {
+            try {
+                GeneratedQuiz generated = requestQuestion(apiKey, model, category, questionType);
+                validate(generated, category, questionType);
+                List<QuizDraftAnswerRecord> answers = new ArrayList<>();
+                for (int index = 0; index < generated.answers().size(); index++) {
+                    GeneratedAnswer answer = generated.answers().get(index);
+                    answers.add(new QuizDraftAnswerRecord(0, answer.answer().trim(), index + 1,
+                            questionType.equals("CHRONOLOGY") ? answer.hint().trim() : null,
+                            sanitizeAliases(answer.aliases(), answer.answer())));
+                }
+                String questionKey = "llm_" + category.toLowerCase(Locale.ROOT) + "_" + questionType.toLowerCase(Locale.ROOT)
+                        + "_" + Instant.now().toEpochMilli() + "_" + UUID.randomUUID().toString().substring(0, 8);
+                long draftId = quizDraftDao.createDraft(questionKey, category, questionType, generated.prompt().trim(), model, answers);
+                log.info("Created Quiz Royale draft {} for {} {} using {}.", draftId, category, questionType, model);
+                return model;
+            } catch (Exception exception) {
+                if (!isTransientFailure(exception)) throw exception;
+                lastFailure = exception;
+                log.warn("Quiz draft generation with {} failed temporarily; trying the next configured model.", model, exception);
+            }
         }
-        String questionKey = "llm_" + category.toLowerCase(Locale.ROOT) + "_" + questionType.toLowerCase(Locale.ROOT)
-                + "_" + Instant.now().toEpochMilli() + "_" + UUID.randomUUID().toString().substring(0, 8);
-        long draftId = quizDraftDao.createDraft(questionKey, category, questionType, generated.prompt().trim(), model, answers);
-        log.info("Created Quiz Royale draft {} for {} {}.", draftId, category, questionType);
+        throw new IllegalStateException("All configured LLM models failed temporarily.", lastFailure);
+    }
+
+    private List<String> configuredModels() {
+        String configured = Optional.ofNullable(System.getenv("LLM_MODELS")).filter(value -> !value.isBlank())
+                .orElseGet(() -> Optional.ofNullable(System.getenv("LLM_MODEL")).filter(value -> !value.isBlank()).orElse("gpt-4.1-mini"));
+        List<String> models = Arrays.stream(configured.split(","))
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .distinct()
+                .toList();
+        if (models.isEmpty()) throw new IllegalStateException("Configure at least one LLM model.");
+        return models;
+    }
+
+    private boolean isTransientFailure(Exception exception) {
+        if (exception instanceof HttpTimeoutException || exception instanceof IOException) return true;
+        if (exception instanceof LlmRequestException requestException) {
+            int status = requestException.statusCode();
+            return status == 408 || status == 429 || status >= 500;
+        }
+        return false;
     }
 
     private GeneratedQuiz requestQuestion(String apiKey, String model, String category, String questionType) throws Exception {
@@ -113,7 +149,7 @@ public class QuizDraftGenerator implements Generator {
             } catch (Exception ignored) {
                 errorMessage = response.body();
             }
-            throw new IllegalStateException("LLM request failed: HTTP " + response.statusCode() + " — " + errorMessage);
+            throw new LlmRequestException(response.statusCode(), errorMessage);
         }
         JsonNode body = objectMapper.readTree(response.body());
         String content = body.path("choices").path(0).path("message").path("content").asText();
@@ -164,4 +200,17 @@ public class QuizDraftGenerator implements Generator {
 
     private record GeneratedQuiz(String prompt, List<GeneratedAnswer> answers) { }
     private record GeneratedAnswer(String answer, List<String> aliases, String hint) { }
+
+    private static final class LlmRequestException extends IllegalStateException {
+        private final int statusCode;
+
+        private LlmRequestException(int statusCode, String message) {
+            super("LLM request failed: HTTP " + statusCode + " — " + message);
+            this.statusCode = statusCode;
+        }
+
+        private int statusCode() {
+            return statusCode;
+        }
+    }
 }
