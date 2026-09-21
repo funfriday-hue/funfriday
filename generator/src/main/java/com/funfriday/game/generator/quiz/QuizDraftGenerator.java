@@ -1,0 +1,167 @@
+package com.funfriday.game.generator.quiz;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.funfriday.db.dao.QuizDraftDao;
+import com.funfriday.db.model.QuizDraftAnswerRecord;
+import com.funfriday.game.generator.Generator;
+import com.funfriday.game.generator.GeneratorSchedule;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
+
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.*;
+
+@Slf4j
+@Component
+@RequiredArgsConstructor
+@GeneratorSchedule(interval = "PT6H")
+public class QuizDraftGenerator implements Generator {
+    private static final List<String> CATEGORIES = List.of("CRICKET", "FOOTBALL", "BOLLYWOOD", "WWE");
+    private static final List<String> QUESTION_TYPES = List.of("LIST", "CHRONOLOGY");
+
+    private final QuizDraftDao quizDraftDao;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final Random random = new Random();
+
+    @Override
+    public void generate() throws Exception {
+        String apiKey = System.getenv("LLM_API_KEY");
+        if (apiKey == null || apiKey.isBlank()) {
+            log.warn("Quiz draft generation skipped: LLM_API_KEY is not configured.");
+            return;
+        }
+
+        String category = CATEGORIES.get(random.nextInt(CATEGORIES.size()));
+        String questionType = QUESTION_TYPES.get(random.nextInt(QUESTION_TYPES.size()));
+        String model = Optional.ofNullable(System.getenv("LLM_MODEL")).filter(value -> !value.isBlank()).orElse("gpt-4.1-mini");
+        GeneratedQuiz generated = requestQuestion(apiKey, model, category, questionType);
+        validate(generated, category, questionType);
+
+        List<QuizDraftAnswerRecord> answers = new ArrayList<>();
+        for (int index = 0; index < generated.answers().size(); index++) {
+            GeneratedAnswer answer = generated.answers().get(index);
+            answers.add(new QuizDraftAnswerRecord(0, answer.answer().trim(), index + 1,
+                    questionType.equals("CHRONOLOGY") ? answer.hint().trim() : null,
+                    sanitizeAliases(answer.aliases(), answer.answer())));
+        }
+        String questionKey = "llm_" + category.toLowerCase(Locale.ROOT) + "_" + questionType.toLowerCase(Locale.ROOT)
+                + "_" + Instant.now().toEpochMilli() + "_" + UUID.randomUUID().toString().substring(0, 8);
+        long draftId = quizDraftDao.createDraft(questionKey, category, questionType, generated.prompt().trim(), model, answers);
+        log.info("Created Quiz Royale draft {} for {} {}.", draftId, category, questionType);
+    }
+
+    private GeneratedQuiz requestQuestion(String apiKey, String model, String category, String questionType) throws Exception {
+        String prompt = """
+                Generate one accurate, fun Quiz Royale question.
+                Category: %s. Type: %s.
+
+                LIST: players name any distinct correct answer in any order.
+                CHRONOLOGY: write a self-contained "Name the ..." question whose answers have one unambiguous
+                chronological display order. The player will see exactly one answer's concise hint (usually a year or
+                event) at a time and must submit that answer. Never include, enumerate, or refer to a supplied list of
+                candidates in the prompt. Never phrase it as "Order these..."; the prompt must be playable without
+                revealing any answer.
+                The prompt MUST define a finite, objective answer set itself, for example "Name every IPL champion in
+                reverse chronological order" or "Name the winner of every ICC Men's Cricket World Cup in reverse
+                chronological order." Never use vague terms such as "these", "following", "iconic", "legendary", or
+                "famous" to imply an unstated list. Do not make chronology questions about an arbitrary selection of
+                films, players, matches, or events.
+                Every chronology answer MUST include its concise hint that tells the player the corresponding
+                year/event/sequence position.
+
+                Use only well-established facts. Do not use future or speculative results. Include at least 8 answers.
+                Provide 1-4 useful, explicit aliases only when they are genuine alternate names, spellings, initials,
+                nicknames, or conventional abbreviations. Never generate partial title fragments as aliases.
+
+                Return JSON only, exactly in this shape:
+                {
+                  "prompt": "...",
+                  "answers": [
+                    {"answer": "canonical answer", "aliases": ["alias"], "hint": "required for chronology; null for list"}
+                  ]
+                }
+                """.formatted(category, questionType);
+        String apiUrl = Optional.ofNullable(System.getenv("LLM_API_URL"))
+                .filter(value -> !value.isBlank()).orElse("https://api.openai.com/v1/chat/completions");
+        String requestBody = objectMapper.writeValueAsString(Map.of(
+                "model", model,
+                "temperature", 0.2,
+                "response_format", Map.of("type", "json_object"),
+                "messages", List.of(
+                        Map.of("role", "system", "content", "You are a meticulous trivia editor. Return valid JSON only."),
+                        Map.of("role", "user", "content", prompt)
+                )
+        ));
+        HttpRequest request = HttpRequest.newBuilder(URI.create(apiUrl))
+                .timeout(Duration.ofSeconds(90))
+                .header("Authorization", "Bearer " + apiKey)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                .build();
+        HttpResponse<String> response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() / 100 != 2) {
+            String errorMessage;
+            try {
+                errorMessage = objectMapper.readTree(response.body()).path("error").path("message").asText(response.body());
+            } catch (Exception ignored) {
+                errorMessage = response.body();
+            }
+            throw new IllegalStateException("LLM request failed: HTTP " + response.statusCode() + " — " + errorMessage);
+        }
+        JsonNode body = objectMapper.readTree(response.body());
+        String content = body.path("choices").path(0).path("message").path("content").asText();
+        if (content.isBlank()) throw new IllegalStateException("LLM response did not contain message content.");
+        JsonNode generated = objectMapper.readTree(stripCodeFence(content));
+        List<GeneratedAnswer> answers = new ArrayList<>();
+        for (JsonNode answer : generated.path("answers")) {
+            List<String> aliases = new ArrayList<>();
+            for (JsonNode alias : answer.path("aliases")) aliases.add(alias.asText());
+            answers.add(new GeneratedAnswer(answer.path("answer").asText(), aliases,
+                    answer.path("hint").isNull() ? null : answer.path("hint").asText()));
+        }
+        return new GeneratedQuiz(generated.path("prompt").asText(), answers);
+    }
+
+    private void validate(GeneratedQuiz generated, String category, String questionType) {
+        if (generated.prompt() == null || generated.prompt().isBlank()) throw new IllegalArgumentException("LLM generated a blank prompt.");
+        String normalizedPrompt = generated.prompt().toLowerCase(Locale.ROOT);
+        if (questionType.equals("CHRONOLOGY") && normalizedPrompt.matches(".*\\b(these|following|iconic|legendary|famous)\\b.*")) {
+            throw new IllegalArgumentException("Chronology prompt refers to an unstated list of answers.");
+        }
+        if (generated.answers().size() < 8) throw new IllegalArgumentException("LLM generated fewer than eight answers.");
+        Set<String> uniqueAnswers = new HashSet<>();
+        for (GeneratedAnswer answer : generated.answers()) {
+            if (answer.answer() == null || answer.answer().isBlank()) throw new IllegalArgumentException("LLM generated a blank answer.");
+            String normalized = answer.answer().replaceAll("[^A-Za-z0-9]", "").toLowerCase(Locale.ROOT);
+            if (questionType.equals("LIST") && !uniqueAnswers.add(normalized)) {
+                throw new IllegalArgumentException("LLM generated duplicate answer: " + answer.answer());
+            }
+            if (questionType.equals("CHRONOLOGY") && (answer.hint() == null || answer.hint().isBlank())) {
+                throw new IllegalArgumentException("Chronology answer is missing its hint.");
+            }
+        }
+    }
+
+    private List<String> sanitizeAliases(List<String> aliases, String canonicalAnswer) {
+        LinkedHashSet<String> unique = new LinkedHashSet<>();
+        if (aliases != null) for (String alias : aliases) {
+            if (alias == null || alias.isBlank() || alias.trim().equalsIgnoreCase(canonicalAnswer.trim())) continue;
+            unique.add(alias.trim());
+        }
+        return List.copyOf(unique);
+    }
+
+    private String stripCodeFence(String value) {
+        return value.trim().replaceFirst("^```(?:json)?\\s*", "").replaceFirst("\\s*```$", "");
+    }
+
+    private record GeneratedQuiz(String prompt, List<GeneratedAnswer> answers) { }
+    private record GeneratedAnswer(String answer, List<String> aliases, String hint) { }
+}

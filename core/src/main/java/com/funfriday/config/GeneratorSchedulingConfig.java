@@ -57,7 +57,10 @@ public class GeneratorSchedulingConfig {
                     return;
                 }
 
-                Duration interval = Duration.parse(schedule.interval());
+                String configuredInterval = "quizDraftGenerator".equals(beanName)
+                        ? System.getenv().getOrDefault("QUIZ_DRAFT_GENERATOR_INTERVAL", schedule.interval())
+                        : schedule.interval();
+                Duration interval = Duration.parse(configuredInterval);
                 log.info("Starting generator {} with interval {}", beanName, interval);
                 taskScheduler.scheduleWithFixedDelay(() -> {
                     try {

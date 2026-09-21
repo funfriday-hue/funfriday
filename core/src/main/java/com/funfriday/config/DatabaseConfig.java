@@ -3,6 +3,8 @@ package com.funfriday.config;
 import com.funfriday.db.DatabaseConnectionProvider;
 import com.funfriday.db.MySqlConnectionProvider;
 import com.funfriday.db.dao.QuizQuestionDao;
+import com.funfriday.db.dao.QuizDraftDao;
+import com.funfriday.db.dao.AdminPasswordDao;
 import com.funfriday.db.dao.SudokuDao;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -23,5 +25,15 @@ public class DatabaseConfig {
     @Bean
     public QuizQuestionDao quizQuestionDao(DatabaseConnectionProvider databaseConnectionProvider) {
         return new QuizQuestionDao(databaseConnectionProvider);
+    }
+
+    @Bean
+    public QuizDraftDao quizDraftDao(DatabaseConnectionProvider databaseConnectionProvider) {
+        return new QuizDraftDao(databaseConnectionProvider);
+    }
+
+    @Bean
+    public AdminPasswordDao adminPasswordDao(DatabaseConnectionProvider databaseConnectionProvider) {
+        return new AdminPasswordDao(databaseConnectionProvider);
     }
 }
