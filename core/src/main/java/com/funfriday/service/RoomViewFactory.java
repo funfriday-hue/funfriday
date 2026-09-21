@@ -139,6 +139,9 @@ public class RoomViewFactory {
                 meta.put("questionType", q.getQuestion().getType().name());
                 meta.put("playMode", q.getGameConfiguration().getPlayMode().name());
                 meta.put("acceptedAnswers", q.getAcceptedAnswers());
+                if (q.getQuestion().getType().name().equals("LIST")) {
+                    meta.put("totalAnswerCount", q.getQuestion().getAnswers().size());
+                }
                 meta.put("currentPlayerId", q.getTurnOrder().isEmpty() ? null : q.getTurnOrder().get(q.getCurrentPlayerIndex()));
                 meta.put("timeoutCoordinatorId", q.getTurnOrder().stream()
                         .filter(id -> q.getScoreBoard().get(id).getStatus() == PlayerStatus.ACTIVE)
