@@ -1,31 +1,30 @@
 package com.funfriday.game.generator.sudoku;
 
+import com.funfriday.db.DatabaseConnectionProvider;
 import com.funfriday.game.generator.Generator;
 import com.funfriday.game.generator.GeneratorSchedule;
 
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Random;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component("sudokuGenerator")
+@RequiredArgsConstructor
 @GeneratorSchedule(interval = "PT12H")
 public class SudokuGenerator implements Generator {
-
-    private static final String URL = "jdbc:mysql://localhost:3306/GameData";
-    private static final String USER = "root";
-    private static final String PASSWORD = "";
+    private final DatabaseConnectionProvider connectionProvider;
 
     @Override
     public void generate() throws Exception {
-        try (Connection conn = DriverManager.getConnection(URL, USER, PASSWORD)) {
+        try (Connection conn = connectionProvider.getConnection()) {
             log.info("Starting sudoku generation cycle");
             generateAndInsert(conn, 6);
             generateAndInsert(conn, 9);
