@@ -54,6 +54,23 @@ public class QuizDraftDao {
         return listQuestions(true, "ACTIVE");
     }
 
+    public List<String> randomPrompts(String category, int limit) throws SQLException {
+        List<String> prompts = new ArrayList<>();
+        try (Connection connection = connectionProvider.getConnection();
+             PreparedStatement statement = connection.prepareStatement("""
+                    SELECT prompt FROM quiz_questions
+                    WHERE category = ?
+                    ORDER BY RAND() LIMIT ?
+                    """)) {
+            statement.setString(1, category);
+            statement.setInt(2, limit);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) prompts.add(resultSet.getString("prompt"));
+            }
+        }
+        return prompts;
+    }
+
     private List<QuizQuestionDraftRecord> listQuestions(boolean active, String status) throws SQLException {
         List<QuizQuestionDraftRecord> drafts = new ArrayList<>();
         try (Connection connection = connectionProvider.getConnection()) {
