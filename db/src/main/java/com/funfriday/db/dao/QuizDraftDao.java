@@ -47,54 +47,103 @@ public class QuizDraftDao {
     }
 
     public List<QuizQuestionDraftRecord> listDrafts(String ignoredStatus) throws SQLException {
+        return listQuestions(false, "DRAFT");
+    }
+
+    public List<QuizQuestionDraftRecord> listActiveQuestions() throws SQLException {
+        return listQuestions(true, "ACTIVE");
+    }
+
+    private List<QuizQuestionDraftRecord> listQuestions(boolean active, String status) throws SQLException {
         List<QuizQuestionDraftRecord> drafts = new ArrayList<>();
         try (Connection connection = connectionProvider.getConnection()) {
             List<QuizQuestionDraftRow> rows = new ArrayList<>();
             try (PreparedStatement statement = connection.prepareStatement("""
                     SELECT id, question_key, category, question_type, prompt, created_at, updated_at
-                    FROM quiz_questions WHERE is_active = FALSE ORDER BY created_at DESC
+                    FROM quiz_questions WHERE is_active = ? ORDER BY created_at DESC
                     """ );
-             ResultSet resultSet = statement.executeQuery()) {
+             ) {
+                statement.setBoolean(1, active);
+                try (ResultSet resultSet = statement.executeQuery()) {
                 while (resultSet.next()) {
                     rows.add(new QuizQuestionDraftRow(resultSet.getLong("id"), resultSet.getString("question_key"),
                             resultSet.getString("category"), resultSet.getString("question_type"), resultSet.getString("prompt"),
                             resultSet.getTimestamp("created_at"), resultSet.getTimestamp("updated_at")));
                 }
+                }
             }
-            for (QuizQuestionDraftRow row : rows) drafts.add(readDraft(connection, row));
+            for (QuizQuestionDraftRow row : rows) drafts.add(readQuestion(connection, row, status));
         }
         return drafts;
     }
 
     public boolean approve(long questionId) throws SQLException {
-        try (Connection connection = connectionProvider.getConnection();
-             PreparedStatement statement = connection.prepareStatement("""
+        try (Connection connection = connectionProvider.getConnection()) {
+            if (!isCompleteDraft(connection, questionId)) return false;
+            try (PreparedStatement statement = connection.prepareStatement("""
                     UPDATE quiz_questions SET is_active = TRUE WHERE id = ? AND is_active = FALSE
                     """)) {
+                statement.setLong(1, questionId);
+                return statement.executeUpdate() == 1;
+            }
+        }
+    }
+
+    private boolean isCompleteDraft(Connection connection, long questionId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT qq.question_type, COUNT(qa.id) AS answer_count,
+                       SUM(CASE WHEN qa.hint IS NULL OR TRIM(qa.hint) = '' THEN 1 ELSE 0 END) AS missing_hints
+                FROM quiz_questions qq
+                LEFT JOIN quiz_answers qa ON qa.question_id = qq.id
+                WHERE qq.id = ? AND qq.is_active = FALSE
+                GROUP BY qq.id, qq.question_type
+                """)) {
             statement.setLong(1, questionId);
-            return statement.executeUpdate() == 1;
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) return false;
+                int answerCount = resultSet.getInt("answer_count");
+                if (answerCount < 8) throw new IllegalArgumentException("A draft needs at least eight answers before approval.");
+                if ("CHRONOLOGY".equals(resultSet.getString("question_type")) && resultSet.getInt("missing_hints") > 0) {
+                    throw new IllegalArgumentException("Every chronology answer needs a hint before approval.");
+                }
+                return true;
+            }
         }
     }
 
     public boolean updateDraft(long questionId, String prompt, List<QuizDraftAnswerRecord> answers) throws SQLException {
+        return updateQuestion(questionId, prompt, answers, false);
+    }
+
+    public boolean updateActiveQuestion(long questionId, String prompt, List<QuizDraftAnswerRecord> answers) throws SQLException {
+        return updateQuestion(questionId, prompt, answers, true);
+    }
+
+    private boolean updateQuestion(long questionId, String prompt, List<QuizDraftAnswerRecord> answers, boolean active) throws SQLException {
         if (prompt == null || prompt.isBlank()) throw new IllegalArgumentException("Question text is required.");
         if (answers == null || answers.isEmpty()) throw new IllegalArgumentException("A draft needs at least one answer.");
         try (Connection connection = connectionProvider.getConnection()) {
             connection.setAutoCommit(false);
             try {
                 try (PreparedStatement question = connection.prepareStatement("""
-                        UPDATE quiz_questions SET prompt = ? WHERE id = ? AND is_active = FALSE
+                        UPDATE quiz_questions SET prompt = ? WHERE id = ? AND is_active = ?
                         """)) {
                     question.setString(1, prompt.trim());
                     question.setLong(2, questionId);
+                    question.setBoolean(3, active);
                     if (question.executeUpdate() != 1) {
                         connection.rollback();
                         return false;
                     }
                 }
+                List<Long> existingAnswerIds = selectAnswerIds(connection, questionId);
+                List<Long> submittedAnswerIds = answers.stream().map(QuizDraftAnswerRecord::id).filter(id -> id > 0).toList();
                 for (QuizDraftAnswerRecord answer : answers) {
-                    if (answer.id() > 0) updateAnswer(connection, questionId, answer);
+                    if (answer.id() > 0) updateAnswer(connection, questionId, answer, active);
                     else insertAnswers(connection, questionId, List.of(answer));
+                }
+                for (Long answerId : existingAnswerIds) {
+                    if (!submittedAnswerIds.contains(answerId)) deleteAnswer(connection, answerId);
                 }
                 connection.commit();
                 return true;
@@ -166,7 +215,7 @@ public class QuizDraftDao {
         }
     }
 
-    private void updateAnswer(Connection connection, long questionId, QuizDraftAnswerRecord answer) throws SQLException {
+    private void updateAnswer(Connection connection, long questionId, QuizDraftAnswerRecord answer, boolean active) throws SQLException {
         if (answer.canonicalAnswer() == null || answer.canonicalAnswer().isBlank()) {
             throw new IllegalArgumentException("Each answer needs text.");
         }
@@ -174,12 +223,13 @@ public class QuizDraftDao {
                 UPDATE quiz_answers qa
                 JOIN quiz_questions qq ON qq.id = qa.question_id
                 SET qa.canonical_answer = ?, qa.hint = ?
-                WHERE qa.id = ? AND qq.id = ? AND qq.is_active = FALSE
+                WHERE qa.id = ? AND qq.id = ? AND qq.is_active = ?
                 """)) {
             answerStatement.setString(1, answer.canonicalAnswer().trim());
             answerStatement.setString(2, answer.hint() == null || answer.hint().isBlank() ? null : answer.hint().trim());
             answerStatement.setLong(3, answer.id());
             answerStatement.setLong(4, questionId);
+            answerStatement.setBoolean(5, active);
             if (answerStatement.executeUpdate() != 1) throw new SQLException("Draft answer " + answer.id() + " was not found.");
         }
         try (PreparedStatement deleteAliases = connection.prepareStatement("DELETE FROM quiz_answer_aliases WHERE answer_id = ?")) {
@@ -196,6 +246,28 @@ public class QuizDraftDao {
         }
     }
 
+    private List<Long> selectAnswerIds(Connection connection, long questionId) throws SQLException {
+        List<Long> answerIds = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement("SELECT id FROM quiz_answers WHERE question_id = ?")) {
+            statement.setLong(1, questionId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) answerIds.add(resultSet.getLong("id"));
+            }
+        }
+        return answerIds;
+    }
+
+    private void deleteAnswer(Connection connection, long answerId) throws SQLException {
+        try (PreparedStatement aliases = connection.prepareStatement("DELETE FROM quiz_answer_aliases WHERE answer_id = ?")) {
+            aliases.setLong(1, answerId);
+            aliases.executeUpdate();
+        }
+        try (PreparedStatement answer = connection.prepareStatement("DELETE FROM quiz_answers WHERE id = ?")) {
+            answer.setLong(1, answerId);
+            answer.executeUpdate();
+        }
+    }
+
     private List<String> sanitizeAliases(List<String> aliases, String canonicalAnswer) {
         if (aliases == null) return List.of();
         return aliases.stream()
@@ -206,8 +278,8 @@ public class QuizDraftDao {
                 .toList();
     }
 
-    private QuizQuestionDraftRecord readDraft(Connection connection, QuizQuestionDraftRow row) throws SQLException {
-        return new QuizQuestionDraftRecord(row.id(), row.questionKey(), row.category(), row.questionType(), row.prompt(), "DRAFT", null,
+    private QuizQuestionDraftRecord readQuestion(Connection connection, QuizQuestionDraftRow row, String status) throws SQLException {
+        return new QuizQuestionDraftRecord(row.id(), row.questionKey(), row.category(), row.questionType(), row.prompt(), status, null,
                 row.createdAt().toInstant(), row.updatedAt() == null ? null : row.updatedAt().toInstant(),
                 selectAnswers(connection, row.id()));
     }

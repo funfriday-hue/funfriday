@@ -47,6 +47,17 @@ public class AdminController {
         }
     }
 
+    @GetMapping("/questions")
+    public ResponseEntity<?> activeQuestions(@RequestHeader(name = "Authorization", required = false) String authorization) {
+        if (!adminAuthService.isAuthorized(authorization)) return unauthorized();
+        try {
+            return ResponseEntity.ok(quizDraftDao.listActiveQuestions());
+        } catch (Exception exception) {
+            log.error("Unable to load active Quiz Royale questions", exception);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("message", "Unable to load active questions."));
+        }
+    }
+
     @PostMapping("/drafts/{draftId}/approve")
     public ResponseEntity<?> approve(@RequestHeader(name = "Authorization", required = false) String authorization,
                                      @PathVariable(name = "draftId") long draftId) {
@@ -55,6 +66,8 @@ public class AdminController {
             return quizDraftDao.approve(draftId)
                     ? ResponseEntity.ok(Map.of("status", "APPROVED"))
                     : ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "Draft is no longer awaiting review."));
+        } catch (IllegalArgumentException exception) {
+            return ResponseEntity.badRequest().body(Map.of("message", exception.getMessage()));
         } catch (Exception exception) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("message", "Unable to approve draft."));
         }
@@ -66,10 +79,7 @@ public class AdminController {
                                          @RequestBody UpdateDraftRequest request) {
         if (!adminAuthService.isAuthorized(authorization)) return unauthorized();
         try {
-            List<QuizDraftAnswerRecord> answers = request.answers() == null ? List.of() : request.answers().stream()
-                    .map(answer -> new QuizDraftAnswerRecord(answer.id(), answer.canonicalAnswer(), answer.displayOrder(), answer.hint(), answer.aliases()))
-                    .toList();
-            return quizDraftDao.updateDraft(draftId, request.prompt(), answers)
+            return quizDraftDao.updateDraft(draftId, request.prompt(), toAnswerRecords(request))
                     ? ResponseEntity.ok(Map.of("status", "SAVED"))
                     : ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "Draft is no longer awaiting review."));
         } catch (IllegalArgumentException exception) {
@@ -77,6 +87,23 @@ public class AdminController {
         } catch (Exception exception) {
             log.error("Unable to update Quiz Royale draft {}", draftId, exception);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("message", "Unable to save draft."));
+        }
+    }
+
+    @PutMapping("/questions/{questionId}")
+    public ResponseEntity<?> updateActiveQuestion(@RequestHeader(name = "Authorization", required = false) String authorization,
+                                                  @PathVariable(name = "questionId") long questionId,
+                                                  @RequestBody UpdateDraftRequest request) {
+        if (!adminAuthService.isAuthorized(authorization)) return unauthorized();
+        try {
+            return quizDraftDao.updateActiveQuestion(questionId, request.prompt(), toAnswerRecords(request))
+                    ? ResponseEntity.ok(Map.of("status", "SAVED"))
+                    : ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "Question is no longer active."));
+        } catch (IllegalArgumentException exception) {
+            return ResponseEntity.badRequest().body(Map.of("message", exception.getMessage()));
+        } catch (Exception exception) {
+            log.error("Unable to update active Quiz Royale question {}", questionId, exception);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("message", "Unable to save question."));
         }
     }
 
@@ -109,6 +136,12 @@ public class AdminController {
 
     private ResponseEntity<Map<String, String>> unauthorized() {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Admin authentication is required."));
+    }
+
+    private List<QuizDraftAnswerRecord> toAnswerRecords(UpdateDraftRequest request) {
+        return request.answers() == null ? List.of() : request.answers().stream()
+                .map(answer -> new QuizDraftAnswerRecord(answer.id(), answer.canonicalAnswer(), answer.displayOrder(), answer.hint(), answer.aliases()))
+                .toList();
     }
 
     private record LoginRequest(String password) { }
