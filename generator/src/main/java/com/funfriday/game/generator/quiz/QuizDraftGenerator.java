@@ -100,11 +100,11 @@ public class QuizDraftGenerator implements Generator {
                 Category: %s. Type: %s.
 
                 LIST: players name any distinct correct answer in any order.
-                CHRONOLOGY: write a self-contained "Name the ..." question whose answers have one unambiguous
-                chronological display order. The player will see exactly one answer's concise hint (usually a year or
-                event) at a time and must submit that answer. Never include, enumerate, or refer to a supplied list of
-                candidates in the prompt. Never phrase it as "Order these..."; the prompt must be playable without
-                revealing any answer.
+                CHRONOLOGY: write a self-contained "Name the ... in reverse chronological order" question. Answers
+                MUST be ordered newest to oldest, so the latest year/event is shown first. The player will see exactly
+                one answer's concise hint (usually a year or event) at a time and must submit that answer. Never
+                include, enumerate, or refer to a supplied list of candidates in the prompt. Never phrase it as
+                "Order these..."; the prompt must be playable without revealing any answer.
                 The prompt MUST define a finite, objective answer set itself, for example "Name every IPL champion in
                 reverse chronological order" or "Name the winner of every ICC Men's Cricket World Cup in reverse
                 chronological order." Never use vague terms such as "these", "following", "iconic", "legendary", or
@@ -174,6 +174,9 @@ public class QuizDraftGenerator implements Generator {
     private void validate(GeneratedQuiz generated, String category, String questionType) {
         if (generated.prompt() == null || generated.prompt().isBlank()) throw new IllegalArgumentException("LLM generated a blank prompt.");
         String normalizedPrompt = generated.prompt().toLowerCase(Locale.ROOT);
+        if (questionType.equals("CHRONOLOGY") && !normalizedPrompt.contains("reverse chronological")) {
+            throw new IllegalArgumentException("Chronology prompt must specify reverse chronological order.");
+        }
         if (questionType.equals("CHRONOLOGY") && normalizedPrompt.matches(".*\\b(these|following|iconic|legendary|famous)\\b.*")) {
             throw new IllegalArgumentException("Chronology prompt refers to an unstated list of answers.");
         }
