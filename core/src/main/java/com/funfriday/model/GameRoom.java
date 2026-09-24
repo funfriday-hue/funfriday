@@ -51,6 +51,34 @@ public class GameRoom {
         return existing != null ? existing : newPlayer;
     }
 
+    public void setPlayerConnection(String playerId, String sessionId, boolean connected) {
+        lock.writeLock().lock();
+        try {
+            GamePlayer player = playerMap.get(playerId);
+            if (player != null) player.setSessionConnected(sessionId, connected);
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    public void kickPlayer(String requestingPlayerId, String playerId) {
+        lock.writeLock().lock();
+        try {
+            if (!this.host.getId().equals(requestingPlayerId)) {
+                throw new IllegalStateException("Only the room host can remove a player.");
+            }
+            if (this.status != GameStatus.WAITING) {
+                throw new IllegalStateException("Players can only be removed from the lobby.");
+            }
+            GamePlayer player = playerMap.get(playerId);
+            if (player == null) throw new IllegalStateException("Player is no longer in this room.");
+            if (player.isHost()) throw new IllegalStateException("The host cannot be removed from the room.");
+            playerMap.remove(playerId);
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
     /**
      * 🎯 Encapsulated Domain Logic: Switches room status from WAITING to IN_PROGRESS
      * and sets up the concrete GameData with initial participant statistics.
@@ -69,27 +97,66 @@ public class GameRoom {
             parsePayload.put("gameMode", gameMode);
 
             GameConfiguration config = this.gameLogic.parseConfiguration(parsePayload);
-            GameData<?> initialGameData = this.gameLogic.initializeData(config);
-            ((GameData<GameConfiguration>) initialGameData).setGameConfiguration(config);
-
-            Map<String, PlayerStats> freshScoreboard = new ConcurrentHashMap<>();
-            for (GamePlayer player : this.playerMap.values()) {
-                PlayerStats stats = this.gameLogic.createInitialStats(player, player.isHost());
-                freshScoreboard.put(player.getId(), stats);
-            }
-            initialGameData.setScoreBoard(freshScoreboard);
-            if (initialGameData instanceof QuizRoyaleData quizData) {
-                quizData.setTurnOrder(new java.util.ArrayList<>(this.playerMap.keySet()));
-                quizData.setCurrentPlayerIndex(0);
-                quizData.setChronologyEligiblePlayerIds(new java.util.ArrayList<>(this.playerMap.keySet()));
-            }
-
-            this.gameData = initialGameData;
-            this.startTime = System.currentTimeMillis();
-            this.status = GameStatus.IN_PROGRESS;
+            initializeNewMatch(config);
         } finally {
             lock.writeLock().unlock();
         }
+    }
+
+    /** Starts a fresh match in the same room using the just-finished match configuration. */
+    public void restartGame(String requestingPlayerId) {
+        lock.writeLock().lock();
+        try {
+            if (!this.host.getId().equals(requestingPlayerId)) {
+                throw new IllegalStateException("Only the room host can restart the game.");
+            }
+            if (this.status != GameStatus.FINISHED || this.gameData == null || this.gameData.getGameConfiguration() == null) {
+                throw new IllegalStateException("Only a finished game can be restarted.");
+            }
+            initializeNewMatch(this.gameData.getGameConfiguration());
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    /** Returns a completed room to its lobby while preserving its room code and connected players. */
+    public void returnToLobby(String requestingPlayerId) {
+        lock.writeLock().lock();
+        try {
+            if (!this.host.getId().equals(requestingPlayerId)) {
+                throw new IllegalStateException("Only the room host can return the room to the lobby.");
+            }
+            if (this.status != GameStatus.FINISHED) {
+                throw new IllegalStateException("Only a finished game can return to the lobby.");
+            }
+            this.gameData = null;
+            this.startTime = System.currentTimeMillis();
+            this.status = GameStatus.WAITING;
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void initializeNewMatch(GameConfiguration config) {
+        GameData<?> initialGameData = this.gameLogic.initializeData(config);
+        ((GameData<GameConfiguration>) initialGameData).setGameConfiguration(config);
+
+        Map<String, PlayerStats> freshScoreboard = new ConcurrentHashMap<>();
+        for (GamePlayer player : this.playerMap.values()) {
+            PlayerStats stats = this.gameLogic.createInitialStats(player, player.isHost());
+            freshScoreboard.put(player.getId(), stats);
+        }
+        initialGameData.setScoreBoard(freshScoreboard);
+        if (initialGameData instanceof QuizRoyaleData quizData) {
+            quizData.setTurnOrder(new java.util.ArrayList<>(this.playerMap.keySet()));
+            quizData.setCurrentPlayerIndex(0);
+            quizData.setChronologyEligiblePlayerIds(new java.util.ArrayList<>(this.playerMap.keySet()));
+        }
+
+        this.gameData = initialGameData;
+        this.startTime = System.currentTimeMillis();
+        this.status = GameStatus.IN_PROGRESS;
     }
 
     public void handlePlayerAction(GameAction action) {

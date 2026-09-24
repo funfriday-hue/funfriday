@@ -27,5 +27,6 @@ public class RoomPublicView {
         private String status;
         private int score;
         private Map<String, Object> stats;
+        private boolean connected;
     }
 }

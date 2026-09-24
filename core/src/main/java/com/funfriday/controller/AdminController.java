@@ -109,10 +109,11 @@ public class AdminController {
 
     @PostMapping("/drafts/{draftId}/decline")
     public ResponseEntity<?> decline(@RequestHeader(name = "Authorization", required = false) String authorization,
-                                     @PathVariable(name = "draftId") long draftId) {
+                                     @PathVariable(name = "draftId") long draftId,
+                                     @RequestBody DeclineDraftRequest request) {
         if (!adminAuthService.isAuthorized(authorization)) return unauthorized();
         try {
-            return quizDraftDao.decline(draftId)
+            return quizDraftDao.decline(draftId, request.reason())
                     ? ResponseEntity.ok(Map.of("status", "DECLINED"))
                     : ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "Draft is no longer awaiting review."));
         } catch (Exception exception) {
@@ -146,6 +147,7 @@ public class AdminController {
 
     private record LoginRequest(String password) { }
     private record AddPasswordRequest(String label, String password) { }
+    private record DeclineDraftRequest(String reason) { }
     private record UpdateDraftRequest(String prompt, List<UpdateDraftAnswerRequest> answers) { }
     private record UpdateDraftAnswerRequest(long id, String canonicalAnswer, int displayOrder, String hint, List<String> aliases) { }
 }

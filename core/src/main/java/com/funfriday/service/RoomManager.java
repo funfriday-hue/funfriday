@@ -164,6 +164,98 @@ public class RoomManager {
         return cf;
     }
 
+    public CompletableFuture<GameRoom> submitRestartGame(String roomId, String requestingPlayerId) {
+        ExecutorService exec = roomExecutors.get(roomId);
+        if (exec == null) {
+            CompletableFuture<GameRoom> failed = new CompletableFuture<>();
+            failed.completeExceptionally(new IllegalStateException("No executor for room: " + roomId));
+            return failed;
+        }
+
+        CompletableFuture<GameRoom> cf = new CompletableFuture<>();
+        exec.submit(() -> {
+            try {
+                GameRoom room = getRoom(roomId);
+                if (room == null) {
+                    cf.completeExceptionally(new IllegalStateException("Room not found: " + roomId));
+                    return;
+                }
+                timerManager.cancelTimer(roomId);
+                room.restartGame(requestingPlayerId);
+                GameData<?> gameData = room.getGameData();
+                if (gameData instanceof QuizRoyaleData) {
+                    timerManager.scheduleQuizRoyaleTurnTimer(roomId, room, exec, roomExecutors);
+                } else if (gameData != null && gameData.getEndTimeMillis() > 0) {
+                    timerManager.scheduleGameTimer(roomId, room, exec, roomExecutors);
+                }
+                cf.complete(room);
+            } catch (Throwable t) {
+                cf.completeExceptionally(t);
+            }
+        });
+        return cf;
+    }
+
+    public CompletableFuture<GameRoom> submitReturnToLobby(String roomId, String requestingPlayerId) {
+        ExecutorService exec = roomExecutors.get(roomId);
+        if (exec == null) {
+            CompletableFuture<GameRoom> failed = new CompletableFuture<>();
+            failed.completeExceptionally(new IllegalStateException("No executor for room: " + roomId));
+            return failed;
+        }
+
+        CompletableFuture<GameRoom> cf = new CompletableFuture<>();
+        exec.submit(() -> {
+            try {
+                GameRoom room = getRoom(roomId);
+                if (room == null) {
+                    cf.completeExceptionally(new IllegalStateException("Room not found: " + roomId));
+                    return;
+                }
+                timerManager.cancelTimer(roomId);
+                room.returnToLobby(requestingPlayerId);
+                cf.complete(room);
+            } catch (Throwable t) {
+                cf.completeExceptionally(t);
+            }
+        });
+        return cf;
+    }
+
+    public CompletableFuture<GameRoom> submitPlayerConnectionUpdate(String roomId, String playerId, String sessionId, boolean connected) {
+        return submitRoomUpdate(roomId, room -> room.setPlayerConnection(playerId, sessionId, connected));
+    }
+
+    public CompletableFuture<GameRoom> submitKickPlayer(String roomId, String requestingPlayerId, String playerId) {
+        return submitRoomUpdate(roomId, room -> room.kickPlayer(requestingPlayerId, playerId));
+    }
+
+    private CompletableFuture<GameRoom> submitRoomUpdate(String roomId, RoomUpdate operation) {
+        ExecutorService exec = roomExecutors.get(roomId);
+        if (exec == null) {
+            CompletableFuture<GameRoom> failed = new CompletableFuture<>();
+            failed.completeExceptionally(new IllegalStateException("No executor for room: " + roomId));
+            return failed;
+        }
+        CompletableFuture<GameRoom> cf = new CompletableFuture<>();
+        exec.submit(() -> {
+            try {
+                GameRoom room = getRoom(roomId);
+                if (room == null) throw new IllegalStateException("Room not found: " + roomId);
+                operation.apply(room);
+                cf.complete(room);
+            } catch (Throwable t) {
+                cf.completeExceptionally(t);
+            }
+        });
+        return cf;
+    }
+
+    @FunctionalInterface
+    private interface RoomUpdate {
+        void apply(GameRoom room);
+    }
+
     public void removeRoom(String roomId) {
         // Invalidate the cache entry -> triggers removalListener which does cleanup
         activeRooms.invalidate(roomId);

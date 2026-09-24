@@ -94,11 +94,12 @@ public class RoomViewFactory {
                                 p.getName(),
                                 stats != null && stats.getStatus() != null ? stats.getStatus().name() : "ACTIVE",
                                 stats != null ? stats.getScore() : 0,
-                                statMap
+                                statMap,
+                                p.isConnected()
                         ));
                     }
 
-                    return new RoomPublicView.PlayerPublic(p.getId(), p.getName(), status, score, statMap);
+                    return new RoomPublicView.PlayerPublic(p.getId(), p.getName(), status, score, statMap, p.isConnected());
                 })
                 .collect(Collectors.toList());
         Object publicGameData = null;
@@ -217,7 +218,8 @@ public class RoomViewFactory {
                 selfStats != null && selfStats.getPlayer() != null ? selfStats.getPlayer().getName() : "You",
                 selfStats != null && selfStats.getStatus() != null ? selfStats.getStatus().name() : "UNKNOWN",
                 selfStats != null ? selfStats.getScore() : 0,
-                selfStatMap
+                selfStatMap,
+                room.getPlayerMap().containsKey(playerId) && room.getPlayerMap().get(playerId).isConnected()
         );
 
         Map<String, Object> privateGameData = new HashMap<>();

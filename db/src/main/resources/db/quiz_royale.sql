@@ -28,6 +28,19 @@ CREATE TABLE IF NOT EXISTS quiz_answer_aliases (
     UNIQUE KEY uq_quiz_answer_alias (answer_id, alias)
 );
 
+-- Declined drafts themselves are deleted, while this table retains the editor
+-- feedback so it can influence future LLM-generated drafts in the same category.
+CREATE TABLE IF NOT EXISTS quiz_question_decline_feedback (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    question_key VARCHAR(120) NOT NULL,
+    category ENUM('CRICKET', 'WWE', 'BOLLYWOOD', 'FOOTBALL') NOT NULL,
+    question_type ENUM('LIST', 'CHRONOLOGY') NOT NULL,
+    prompt TEXT NOT NULL,
+    decline_reason TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_quiz_decline_feedback_category (category, created_at)
+);
+
 INSERT INTO quiz_questions (question_key, category, question_type, prompt)
 VALUES
     ('cricket-2011-world-cup-squad', 'CRICKET', 'LIST', 'Name players from India''s 2011 Cricket World Cup-winning squad.'),

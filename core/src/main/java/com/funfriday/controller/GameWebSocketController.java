@@ -14,8 +14,11 @@ import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.simp.annotation.SendToUser;
 import org.springframework.stereotype.Controller;
+import org.springframework.context.event.EventListener;
+import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
 
 import lombok.RequiredArgsConstructor;
@@ -77,13 +80,19 @@ public class GameWebSocketController {
             playerId = UUID.randomUUID().toString();
             headerAccessor.getSessionAttributes().put("playerId", playerId);
         }
+        headerAccessor.getSessionAttributes().put("roomId", roomId);
+        String sessionId = headerAccessor.getSessionId();
+        String connectedPlayerId = playerId;
 
-
-        // Broadcast sanitized public view to everyone
-        broadcastRoomPublic(roomId, room);
-
-        // Send private view only to the joining player (so they receive their private data like attempts)
-        sendPrivateRoomUpdate(roomId, room, playerId);
+        roomService.submitPlayerConnectionUpdate(roomId, connectedPlayerId, sessionId, true)
+                .thenAccept(updatedRoom -> {
+                    broadcastRoomPublic(roomId, updatedRoom);
+                    sendPrivateRoomUpdate(roomId, updatedRoom, connectedPlayerId);
+                })
+                .exceptionally(ex -> {
+                    log.warn("Unable to mark player {} connected in room {}", connectedPlayerId, roomId, ex);
+                    return null;
+                });
     }
 
     @MessageMapping("/game/{roomId}/start")
@@ -121,6 +130,75 @@ public class GameWebSocketController {
                 });
     }
 
+    @MessageMapping("/game/{roomId}/restart")
+    public void restartGame(@DestinationVariable("roomId") String roomId,
+                            SimpMessageHeaderAccessor headerAccessor) {
+        String playerId = (String) headerAccessor.getSessionAttributes().get("playerId");
+        roomService.submitRestartGame(roomId, playerId)
+                .thenAccept(updatedRoom -> {
+                    log.info("Game restarted in room {} by host {}", roomId, playerId);
+                    broadcastRoomPublic(roomId, updatedRoom);
+                    updatedRoom.getPlayerMap().keySet().forEach(pid -> sendPrivateRoomUpdate(roomId, updatedRoom, pid));
+                })
+                .exceptionally(ex -> {
+                    log.warn("Error restarting game in room {}: {}", roomId, ex.getMessage(), ex);
+                    sendErrorMessage(roomId, playerId, "Unable to restart game");
+                    return null;
+                });
+    }
+
+    @MessageMapping("/game/{roomId}/lobby")
+    public void returnToLobby(@DestinationVariable("roomId") String roomId,
+                              SimpMessageHeaderAccessor headerAccessor) {
+        String playerId = (String) headerAccessor.getSessionAttributes().get("playerId");
+        roomService.submitReturnToLobby(roomId, playerId)
+                .thenAccept(updatedRoom -> {
+                    log.info("Room {} returned to lobby by host {}", roomId, playerId);
+                    broadcastRoomPublic(roomId, updatedRoom);
+                    updatedRoom.getPlayerMap().keySet().forEach(pid -> sendPrivateRoomUpdate(roomId, updatedRoom, pid));
+                })
+                .exceptionally(ex -> {
+                    log.warn("Error returning room {} to lobby: {}", roomId, ex.getMessage(), ex);
+                    sendErrorMessage(roomId, playerId, "Unable to return to lobby");
+                    return null;
+                });
+    }
+
+    @MessageMapping("/game/{roomId}/kick")
+    public void kickPlayer(@DestinationVariable("roomId") String roomId,
+                           SimpMessageHeaderAccessor headerAccessor,
+                           @Payload KickPlayerRequest request) {
+        String playerId = (String) headerAccessor.getSessionAttributes().get("playerId");
+        roomService.submitKickPlayer(roomId, playerId, request.playerId())
+                .thenAccept(updatedRoom -> {
+                    log.info("Host {} removed player {} from room {}", playerId, request.playerId(), roomId);
+                    broadcastRoomPublic(roomId, updatedRoom);
+                    sendErrorMessage(roomId, request.playerId(), "KICKED_FROM_ROOM");
+                })
+                .exceptionally(ex -> {
+                    log.warn("Error removing player from room {}: {}", roomId, ex.getMessage(), ex);
+                    sendErrorMessage(roomId, playerId, "Unable to remove player");
+                    return null;
+                });
+    }
+
+    @EventListener
+    public void handleDisconnect(SessionDisconnectEvent event) {
+        StompHeaderAccessor accessor = StompHeaderAccessor.wrap(event.getMessage());
+        Map<String, Object> attributes = accessor.getSessionAttributes();
+        if (attributes == null) return;
+        String roomId = (String) attributes.get("roomId");
+        String playerId = (String) attributes.get("playerId");
+        if (roomId == null || playerId == null) return;
+
+        roomService.submitPlayerConnectionUpdate(roomId, playerId, accessor.getSessionId(), false)
+                .thenAccept(updatedRoom -> broadcastRoomPublic(roomId, updatedRoom))
+                .exceptionally(ex -> {
+                    log.debug("Unable to mark player {} disconnected in room {}: {}", playerId, roomId, ex.getMessage());
+                    return null;
+                });
+    }
+
     // Broadcast safe public view to everyone
     private void broadcastRoomPublic(String roomId, GameRoom room) {
         RoomPublicView publicView = viewFactory.buildPublicView(room);
@@ -142,6 +220,8 @@ public class GameWebSocketController {
 
         messagingTemplate.convertAndSend(targetDestination, error);
     }
+
+    private record KickPlayerRequest(String playerId) { }
 
     @MessageExceptionHandler(InvalidGameMoveException.class)
     @SendToUser("/queue/errors")

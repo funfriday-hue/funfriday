@@ -71,6 +71,28 @@ public class QuizDraftDao {
         return prompts;
     }
 
+    /**
+     * Declined drafts are deleted from the playable-question tables, but their
+     * editor feedback remains available to guide future LLM generations.
+     */
+    public List<String> randomDeclineReasons(String category, int limit) throws SQLException {
+        List<String> reasons = new ArrayList<>();
+        try (Connection connection = connectionProvider.getConnection();
+             PreparedStatement statement = connection.prepareStatement("""
+                    SELECT decline_reason
+                    FROM quiz_question_decline_feedback
+                    WHERE category = ?
+                    ORDER BY RAND() LIMIT ?
+                    """)) {
+            statement.setString(1, category);
+            statement.setInt(2, limit);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) reasons.add(resultSet.getString("decline_reason"));
+            }
+        }
+        return reasons;
+    }
+
     private List<QuizQuestionDraftRecord> listQuestions(boolean active, String status) throws SQLException {
         List<QuizQuestionDraftRecord> drafts = new ArrayList<>();
         try (Connection connection = connectionProvider.getConnection()) {
@@ -171,10 +193,25 @@ public class QuizDraftDao {
         }
     }
 
-    public boolean decline(long questionId) throws SQLException {
+    public boolean decline(long questionId, String reason) throws SQLException {
+        if (reason == null || reason.isBlank()) throw new IllegalArgumentException("A decline reason is required.");
         try (Connection connection = connectionProvider.getConnection()) {
             connection.setAutoCommit(false);
             try {
+                try (PreparedStatement feedback = connection.prepareStatement("""
+                        INSERT INTO quiz_question_decline_feedback
+                            (question_key, category, question_type, prompt, decline_reason)
+                        SELECT question_key, category, question_type, prompt, ?
+                        FROM quiz_questions
+                        WHERE id = ? AND is_active = FALSE
+                        """)) {
+                    feedback.setString(1, reason.trim());
+                    feedback.setLong(2, questionId);
+                    if (feedback.executeUpdate() != 1) {
+                        connection.rollback();
+                        return false;
+                    }
+                }
                 try (PreparedStatement aliases = connection.prepareStatement("""
                         DELETE qaa FROM quiz_answer_aliases qaa
                         JOIN quiz_answers qa ON qa.id = qaa.answer_id
