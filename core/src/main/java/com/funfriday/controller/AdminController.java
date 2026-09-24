@@ -1,7 +1,10 @@
 package com.funfriday.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.funfriday.db.dao.QuizAuditDao;
 import com.funfriday.db.dao.QuizDraftDao;
 import com.funfriday.db.model.QuizDraftAnswerRecord;
+import com.funfriday.db.model.QuizAuditSuggestionRecord;
 import com.funfriday.db.model.QuizQuestionDraftRecord;
 import com.funfriday.service.AdminAuthService;
 import lombok.extern.slf4j.Slf4j;
@@ -22,6 +25,8 @@ import java.util.Map;
 public class AdminController {
     private final AdminAuthService adminAuthService;
     private final QuizDraftDao quizDraftDao;
+    private final QuizAuditDao quizAuditDao;
+    private final ObjectMapper objectMapper;
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody LoginRequest request) {
@@ -55,6 +60,63 @@ public class AdminController {
         } catch (Exception exception) {
             log.error("Unable to load active Quiz Royale questions", exception);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("message", "Unable to load active questions."));
+        }
+    }
+
+    @GetMapping("/audits")
+    public ResponseEntity<?> audits(@RequestHeader(name = "Authorization", required = false) String authorization) {
+        if (!adminAuthService.isAuthorized(authorization)) return unauthorized();
+        try {
+            return ResponseEntity.ok(quizAuditDao.listPending());
+        } catch (Exception exception) {
+            log.error("Unable to load Quiz Royale audits", exception);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("message", "Unable to load audits."));
+        }
+    }
+
+    @PutMapping("/audits/{auditId}")
+    public ResponseEntity<?> updateAudit(@RequestHeader(name = "Authorization", required = false) String authorization,
+                                         @PathVariable(name = "auditId") long auditId,
+                                         @RequestBody AuditUpdateRequest request) {
+        if (!adminAuthService.isAuthorized(authorization)) return unauthorized();
+        try {
+            return quizAuditDao.updateSuggestions(auditId, objectMapper.writeValueAsString(toAuditSuggestions(request.suggestions())))
+                    ? ResponseEntity.ok(Map.of("status", "SAVED"))
+                    : ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "Audit is no longer awaiting review."));
+        } catch (Exception exception) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Unable to save audit suggestions."));
+        }
+    }
+
+    @PostMapping("/audits/{auditId}/accept")
+    public ResponseEntity<?> acceptAudit(@RequestHeader(name = "Authorization", required = false) String authorization,
+                                         @PathVariable(name = "auditId") long auditId,
+                                         @RequestBody AuditUpdateRequest request) {
+        if (!adminAuthService.isAuthorized(authorization)) return unauthorized();
+        try {
+            return quizAuditDao.accept(auditId, toAuditSuggestions(request.suggestions()))
+                    ? ResponseEntity.ok(Map.of("status", "ACCEPTED"))
+                    : ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "Audit or its active question is no longer available."));
+        } catch (IllegalArgumentException exception) {
+            return ResponseEntity.badRequest().body(Map.of("message", exception.getMessage()));
+        } catch (Exception exception) {
+            log.error("Unable to accept audit {}", auditId, exception);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("message", "Unable to apply audit."));
+        }
+    }
+
+    @PostMapping("/audits/{auditId}/decline")
+    public ResponseEntity<?> declineAudit(@RequestHeader(name = "Authorization", required = false) String authorization,
+                                          @PathVariable(name = "auditId") long auditId,
+                                          @RequestBody DeclineAuditRequest request) {
+        if (!adminAuthService.isAuthorized(authorization)) return unauthorized();
+        if (request.reason() == null || request.reason().isBlank()) return ResponseEntity.badRequest().body(Map.of("message", "A decline reason is required."));
+        try {
+            return quizAuditDao.markDeclined(auditId, request.reason())
+                    ? ResponseEntity.ok(Map.of("status", "DECLINED"))
+                    : ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "Audit is no longer awaiting review."));
+        } catch (Exception exception) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("message", "Unable to decline audit."));
         }
     }
 
@@ -145,9 +207,19 @@ public class AdminController {
                 .toList();
     }
 
+    private List<QuizAuditSuggestionRecord> toAuditSuggestions(List<AuditSuggestionRequest> suggestions) {
+        if (suggestions == null) return List.of();
+        return suggestions.stream().map(suggestion -> new QuizAuditSuggestionRecord(
+                suggestion.action() == null ? "" : suggestion.action().trim().toUpperCase(), suggestion.canonicalAnswer(),
+                suggestion.displayOrder(), suggestion.hint(), suggestion.aliases() == null ? List.of() : suggestion.aliases(), suggestion.reason())).toList();
+    }
+
     private record LoginRequest(String password) { }
     private record AddPasswordRequest(String label, String password) { }
     private record DeclineDraftRequest(String reason) { }
+    private record DeclineAuditRequest(String reason) { }
     private record UpdateDraftRequest(String prompt, List<UpdateDraftAnswerRequest> answers) { }
     private record UpdateDraftAnswerRequest(long id, String canonicalAnswer, int displayOrder, String hint, List<String> aliases) { }
+    private record AuditUpdateRequest(List<AuditSuggestionRequest> suggestions) { }
+    private record AuditSuggestionRequest(String action, String canonicalAnswer, int displayOrder, String hint, List<String> aliases, String reason) { }
 }

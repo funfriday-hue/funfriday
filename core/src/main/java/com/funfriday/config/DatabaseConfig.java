@@ -6,6 +6,7 @@ import com.funfriday.db.dao.QuizQuestionDao;
 import com.funfriday.db.dao.QuizDraftDao;
 import com.funfriday.db.dao.AdminPasswordDao;
 import com.funfriday.db.dao.SudokuDao;
+import com.funfriday.db.dao.QuizAuditDao;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -30,6 +31,11 @@ public class DatabaseConfig {
     @Bean
     public QuizDraftDao quizDraftDao(DatabaseConnectionProvider databaseConnectionProvider) {
         return new QuizDraftDao(databaseConnectionProvider);
+    }
+
+    @Bean
+    public QuizAuditDao quizAuditDao(DatabaseConnectionProvider databaseConnectionProvider) {
+        return new QuizAuditDao(databaseConnectionProvider);
     }
 
     @Bean

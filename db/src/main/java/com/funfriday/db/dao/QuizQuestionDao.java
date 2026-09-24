@@ -62,6 +62,28 @@ public class QuizQuestionDao {
         }
     }
 
+    public Optional<QuizQuestionRecord> selectRandomActive() throws SQLException {
+        try (Connection connection = connectionProvider.getConnection();
+             PreparedStatement questionStatement = connection.prepareStatement("""
+                     SELECT id, question_key, category, question_type, prompt
+                     FROM quiz_questions question
+                     WHERE is_active = TRUE
+                       AND NOT EXISTS (
+                           SELECT 1 FROM quiz_question_audits audit
+                           WHERE audit.question_id = question.id AND audit.status = 'PENDING'
+                       )
+                     ORDER BY RAND() LIMIT 1
+                     """)) {
+            try (ResultSet resultSet = questionStatement.executeQuery()) {
+                if (!resultSet.next()) return Optional.empty();
+                long questionId = resultSet.getLong("id");
+                return Optional.of(new QuizQuestionRecord(questionId, resultSet.getString("question_key"),
+                        resultSet.getString("category"), resultSet.getString("question_type"), resultSet.getString("prompt"),
+                        selectAnswers(connection, questionId)));
+            }
+        }
+    }
+
     private List<QuizAnswerRecord> selectAnswers(Connection connection, long questionId) throws SQLException {
         List<QuizAnswerRecord> answers = new ArrayList<>();
         try (PreparedStatement answerStatement = connection.prepareStatement(SELECT_ANSWERS)) {
