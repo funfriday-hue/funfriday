@@ -79,10 +79,11 @@ public class RoomManager {
                 .build();
     }
 
-    public GameRoom createRoom(GameFactory.GameType gameType, String playerId, String hostName) {
+    public GameRoom createRoom(GameFactory.GameType gameType, String playerId, String hostName, String initialGameMode) {
         String roomId = UUID.randomUUID().toString().substring(0, 6).toUpperCase();
         GameLogic logic = gameFactory.createGame(gameType); // Use injected factory instance
         GameRoom room = new GameRoom(roomId, playerId, hostName, logic, gameType);
+        room.setInitialGameMode(initialGameMode);
 
         // Store available modes in the room for easy access
         if (logic instanceof GameModeProvider) {
@@ -119,7 +120,8 @@ public class RoomManager {
                 }
                 room.handlePlayerAction(action);
                 if (room.getGameData() instanceof QuizRoyaleData) {
-                    timerManager.scheduleQuizRoyaleTurnTimer(roomId, room, exec, roomExecutors);
+                    if (((QuizRoyaleData) room.getGameData()).isQuestionActive()) timerManager.scheduleQuizRoyaleTurnTimer(roomId, room, exec, roomExecutors);
+                    else timerManager.scheduleQuizRoyaleQuestionTransition(roomId, room, exec, roomExecutors);
                 }
                 cf.complete(room);
             } catch (Throwable t) {
@@ -151,7 +153,7 @@ public class RoomManager {
                 // If TIME_ATTACK or other timed mode, schedule the timer
                 GameData<?> gameData = room.getGameData();
                 if (gameData instanceof QuizRoyaleData) {
-                    timerManager.scheduleQuizRoyaleTurnTimer(roomId, room, exec, roomExecutors);
+                    timerManager.scheduleQuizRoyaleQuestionTransition(roomId, room, exec, roomExecutors);
                 } else if (gameData != null && gameData.getEndTimeMillis() > 0) {
                     timerManager.scheduleGameTimer(roomId, room, exec, roomExecutors);
                 }
@@ -184,7 +186,7 @@ public class RoomManager {
                 room.restartGame(requestingPlayerId);
                 GameData<?> gameData = room.getGameData();
                 if (gameData instanceof QuizRoyaleData) {
-                    timerManager.scheduleQuizRoyaleTurnTimer(roomId, room, exec, roomExecutors);
+                    timerManager.scheduleQuizRoyaleQuestionTransition(roomId, room, exec, roomExecutors);
                 } else if (gameData != null && gameData.getEndTimeMillis() > 0) {
                     timerManager.scheduleGameTimer(roomId, room, exec, roomExecutors);
                 }

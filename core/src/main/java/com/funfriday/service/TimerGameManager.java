@@ -124,6 +124,7 @@ public class TimerGameManager {
     public void scheduleQuizRoyaleTurnTimer(String roomId, GameRoom room, ExecutorService roomExecutor, Map<String, ExecutorService> roomExecutors) {
         if (!(room.getGameData() instanceof QuizRoyaleData quizData)
                 || room.getStatus() != GameStatus.IN_PROGRESS
+                || !quizData.isQuestionActive()
                 || quizData.getGameConfiguration().getTurnSeconds() <= 0) {
             cancelTimer(roomId);
             return;
@@ -171,7 +172,8 @@ public class TimerGameManager {
                     messagingTemplate.convertAndSend("/topic/room/" + roomId, viewFactory.buildPublicView(room));
 
                     if (room.getStatus() == GameStatus.IN_PROGRESS) {
-                        scheduleQuizRoyaleTurnTimer(roomId, room, roomExecutor, roomExecutors);
+                        if (currentData.isQuestionActive()) scheduleQuizRoyaleTurnTimer(roomId, room, roomExecutor, roomExecutors);
+                        else scheduleQuizRoyaleQuestionTransition(roomId, room, roomExecutor, roomExecutors);
                     } else {
                         cancelTimer(roomId);
                     }
@@ -183,6 +185,37 @@ public class TimerGameManager {
 
         roomTimers.put(roomId, future);
         log.debug("Scheduled Quiz Royale timer for room {} in {}ms", roomId, delayMillis);
+    }
+
+    /** Starts the next Quiz Royale question after a short server-authoritative intermission. */
+    public void scheduleQuizRoyaleQuestionTransition(String roomId, GameRoom room, ExecutorService roomExecutor, Map<String, ExecutorService> roomExecutors) {
+        if (!(room.getGameData() instanceof QuizRoyaleData quizData) || room.getStatus() != GameStatus.IN_PROGRESS || quizData.isQuestionActive()) {
+            return;
+        }
+        cancelTimer(roomId);
+        long expectedEnd = quizData.getQuestionTransitionEndsAtMillis();
+        long delayMillis = Math.max(1, expectedEnd - System.currentTimeMillis());
+        ScheduledFuture<?> future = scheduler.schedule(() -> {
+            ExecutorService executor = roomExecutors.get(roomId);
+            if (executor == null || executor.isShutdown()) return;
+            executor.submit(() -> {
+                try {
+                    if (room.getStatus() != GameStatus.IN_PROGRESS || !(room.getGameData() instanceof QuizRoyaleData current)
+                            || current.isQuestionActive() || current.getQuestionTransitionEndsAtMillis() != expectedEnd) return;
+                    String coordinator = current.getTurnOrder().isEmpty() ? null : current.getTurnOrder().get(0);
+                    if (coordinator == null) return;
+                    QuizRoyaleAction startAction = new QuizRoyaleAction();
+                    startAction.setType("QUIZ_START_QUESTION");
+                    startAction.setPlayerId(coordinator);
+                    room.handlePlayerAction(startAction);
+                    messagingTemplate.convertAndSend("/topic/room/" + roomId, viewFactory.buildPublicView(room));
+                    if (room.getStatus() == GameStatus.IN_PROGRESS) scheduleQuizRoyaleTurnTimer(roomId, room, roomExecutor, roomExecutors);
+                } catch (Throwable throwable) {
+                    log.error("Error starting next Quiz Royale question for room {}", roomId, throwable);
+                }
+            });
+        }, delayMillis, TimeUnit.MILLISECONDS);
+        roomTimers.put(roomId, future);
     }
 
     /**

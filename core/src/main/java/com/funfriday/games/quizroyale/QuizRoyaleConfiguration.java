@@ -12,4 +12,5 @@ public class QuizRoyaleConfiguration implements GameConfiguration {
     private QuizRoyalePlayMode playMode;
     private int strikeLimit;
     private int turnSeconds;
+    private int questionCount;
 }

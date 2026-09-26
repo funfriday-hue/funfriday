@@ -27,6 +27,7 @@ public class GameRoom {
     private GamePlayer host;
     private GameFactory.GameType type;
     private List<GameModeDTO.ModeOption> availableModes;
+    private String initialGameMode;
     private final Map<String, GamePlayer> playerMap = new ConcurrentHashMap<>();
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 
@@ -150,6 +151,7 @@ public class GameRoom {
         initialGameData.setScoreBoard(freshScoreboard);
         if (initialGameData instanceof QuizRoyaleData quizData) {
             quizData.setTurnOrder(new java.util.ArrayList<>(this.playerMap.keySet()));
+            quizData.setPlayerOrder(new java.util.ArrayList<>(this.playerMap.keySet()));
             quizData.setCurrentPlayerIndex(0);
             quizData.setChronologyEligiblePlayerIds(new java.util.ArrayList<>(this.playerMap.keySet()));
         }
@@ -171,6 +173,9 @@ public class GameRoom {
                 if (playerTime >= this.gameData.getEndTimeMillis()) {
                     throw new IllegalStateException("Game time has expired. No more moves allowed.");
                 }
+            }
+            if (this.gameData != null && System.currentTimeMillis() < this.gameData.getPlayStartsAtMillis()) {
+                throw new IllegalStateException("The game is about to start.");
             }
 
             if (!this.playerMap.containsKey(action.getPlayerId())) {

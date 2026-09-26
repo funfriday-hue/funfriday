@@ -9,6 +9,12 @@ import java.util.List;
 @Data @EqualsAndHashCode(callSuper = true)
 public class QuizRoyaleData extends GameData<QuizRoyaleConfiguration> {
     private QuizQuestion question;
+    private List<QuizQuestion> questions = new ArrayList<>();
+    private List<QuizQuestionResult> questionResults = new ArrayList<>();
+    private int questionIndex;
+    private List<String> playerOrder = new ArrayList<>();
+    private boolean questionActive;
+    private long questionTransitionEndsAtMillis;
     private List<String> turnOrder = new ArrayList<>();
     private int currentPlayerIndex;
     private int chronologyIndex;

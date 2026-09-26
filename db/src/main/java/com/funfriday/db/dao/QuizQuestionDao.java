@@ -42,9 +42,16 @@ public class QuizQuestionDao {
     }
 
     public Optional<QuizQuestionRecord> selectRandomActiveByCategory(String category) throws SQLException {
+        return selectRandomActiveByCategoryExcluding(category, List.of());
+    }
+
+    public Optional<QuizQuestionRecord> selectRandomActiveByCategoryExcluding(String category, List<String> excludedQuestionKeys) throws SQLException {
+        String exclusions = excludedQuestionKeys.isEmpty() ? "" : " AND question_key NOT IN (" + String.join(",", java.util.Collections.nCopies(excludedQuestionKeys.size(), "?")) + ")";
+        String query = "SELECT id, question_key, category, question_type, prompt FROM quiz_questions WHERE category = ? AND is_active = TRUE" + exclusions + " ORDER BY RAND() LIMIT 1";
         try (Connection connection = connectionProvider.getConnection();
-             PreparedStatement questionStatement = connection.prepareStatement(SELECT_RANDOM_ACTIVE_QUESTION)) {
+             PreparedStatement questionStatement = connection.prepareStatement(query)) {
             questionStatement.setString(1, category);
+            for (int index = 0; index < excludedQuestionKeys.size(); index++) questionStatement.setString(index + 2, excludedQuestionKeys.get(index));
             try (ResultSet resultSet = questionStatement.executeQuery()) {
                 if (!resultSet.next()) return Optional.empty();
 

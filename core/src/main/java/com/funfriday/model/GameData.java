@@ -28,10 +28,13 @@ public abstract class GameData<T extends GameConfiguration> {
     private volatile boolean finished = false;
     private GamePlayer winner;
     private volatile long startTime;
+    /** Server timestamp at which player moves are allowed; supports synchronized pre-game countdowns. */
+    private volatile long playStartsAtMillis;
     private volatile long endTimeMillis; // server authoritative end time in epoch millis
 
     public GameData() {
         this.startTime = System.currentTimeMillis();
+        this.playStartsAtMillis = this.startTime;
     }
 
     // convenience helper

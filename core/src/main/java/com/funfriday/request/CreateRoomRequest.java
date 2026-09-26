@@ -11,4 +11,6 @@ import lombok.Setter;
 public class CreateRoomRequest {
     private GameFactory.GameType type;
     private String host;
+    /** Optional preselected game mode, used by Quiz Royale category cards. */
+    private String gameMode;
 }

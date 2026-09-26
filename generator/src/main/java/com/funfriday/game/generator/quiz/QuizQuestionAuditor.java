@@ -19,6 +19,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
 import java.time.Duration;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.*;
 
 @Slf4j
@@ -26,6 +28,7 @@ import java.util.*;
 @RequiredArgsConstructor
 @GeneratorSchedule(interval = "PT3H")
 public class QuizQuestionAuditor implements Generator {
+    private static final ZoneId QUIZ_TIME_ZONE = ZoneId.of("Asia/Kolkata");
     private final QuizQuestionDao quizQuestionDao;
     private final QuizAuditDao quizAuditDao;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -40,10 +43,11 @@ public class QuizQuestionAuditor implements Generator {
         QuizQuestionRecord question = quizQuestionDao.selectRandomActive()
                 .orElseThrow(() -> new IllegalStateException("No active Quiz Royale question is available to audit."));
         List<String> declinedFeedback = quizAuditDao.randomDeclineReasons(question.category(), 10);
+        LocalDate asOfDate = LocalDate.now(QUIZ_TIME_ZONE);
         Exception lastFailure = null;
         for (String model : configuredModels()) {
             try {
-                AuditResult result = requestAudit(apiKey, model, question, declinedFeedback);
+                AuditResult result = requestAudit(apiKey, model, question, asOfDate, declinedFeedback);
                 validate(result, question.questionType());
                 String status = result.suggestions().isEmpty() ? "CORRECT" : "PENDING";
                 long auditId = quizAuditDao.create(question.id(), question.questionKey(), question.category(), question.questionType(),
@@ -59,14 +63,16 @@ public class QuizQuestionAuditor implements Generator {
         throw new IllegalStateException("All configured LLM models failed temporarily for quiz audit.", lastFailure);
     }
 
-    private AuditResult requestAudit(String apiKey, String model, QuizQuestionRecord question, List<String> declinedFeedback) throws Exception {
+    private AuditResult requestAudit(String apiKey, String model, QuizQuestionRecord question, LocalDate asOfDate, List<String> declinedFeedback) throws Exception {
         String questionJson = objectMapper.writeValueAsString(Map.of(
                 "category", question.category(), "type", question.questionType(), "prompt", question.prompt(),
                 "answers", question.answers().stream().map(answer -> Map.of(
                         "answer", answer.canonicalAnswer(), "displayOrder", answer.displayOrder(),
                         "hint", answer.hint() == null ? "" : answer.hint(), "aliases", answer.aliases())).toList()));
         String prompt = """
-                Audit this Quiz Royale trivia question for factual correctness and completeness as of today.
+                Audit this Quiz Royale trivia question for factual correctness and completeness as of %s (Asia/Kolkata).
+                This is the factual cutoff: include results and releases on or before this date, and reject entries
+                after it. Do not assume an older knowledge cutoff (for example 2024) is current.
                 For LIST questions, every valid answer must be present exactly once. For CHRONOLOGY questions, the
                 answer set must be complete, ordered newest-to-oldest, and every answer must have the correct hint.
                 Do not invent uncertain facts. Return no suggestions if it is already correct.
@@ -87,7 +93,7 @@ public class QuizQuestionAuditor implements Generator {
                 }
                 Only use ADD or REMOVE. For chronology ADD, displayOrder is the desired final one-based position.
                 Never add partial film titles or other weak aliases.
-                """.formatted(questionJson, declinedFeedback.isEmpty() ? "(none)" : "- " + String.join("\n- ", declinedFeedback));
+                """.formatted(asOfDate, questionJson, declinedFeedback.isEmpty() ? "(none)" : "- " + String.join("\n- ", declinedFeedback));
         String apiUrl = Optional.ofNullable(System.getenv("LLM_API_URL"))
                 .filter(value -> !value.isBlank()).orElse("https://api.openai.com/v1/chat/completions");
         String body = objectMapper.writeValueAsString(Map.of(

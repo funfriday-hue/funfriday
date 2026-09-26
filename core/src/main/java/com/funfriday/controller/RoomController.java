@@ -34,7 +34,7 @@ public class RoomController {
             return ResponseEntity.badRequest().build();
         }
 
-        GameRoom room = roomManager.createRoom(request.getType(), playerId, request.getHost());
+        GameRoom room = roomManager.createRoom(request.getType(), playerId, request.getHost(), request.getGameMode());
 
         // 3. Attach Cookie to Response
         Cookie cookie = new Cookie("playerId", room.getHost().getId());

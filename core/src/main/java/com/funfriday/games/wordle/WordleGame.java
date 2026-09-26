@@ -151,9 +151,11 @@ public class WordleGame implements GameLogic, GameModeProvider {
         data.setPlayerProgress(new ConcurrentHashMap<>());
         data.setPlayerAttempts(new ConcurrentHashMap<>());
         data.setFinished(false);
+        long playStartsAt = System.currentTimeMillis() + 5000;
+        data.setPlayStartsAtMillis(playStartsAt);
 
         if (gameMode.getRuleType() == WordleGameMode.RuleType.TIME_ATTACK) {
-            data.setEndTimeMillis(System.currentTimeMillis() + (gameMode.getTargetValue() * 1000L));
+            data.setEndTimeMillis(playStartsAt + (gameMode.getTargetValue() * 1000L));
         }
 
         return data;

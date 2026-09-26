@@ -18,6 +18,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.*;
 
 @Slf4j
@@ -25,6 +27,7 @@ import java.util.*;
 @RequiredArgsConstructor
 @GeneratorSchedule(interval = "PT6H")
 public class QuizDraftGenerator implements Generator {
+    private static final ZoneId QUIZ_TIME_ZONE = ZoneId.of("Asia/Kolkata");
     private static final List<String> CATEGORIES = List.of("CRICKET", "FOOTBALL", "BOLLYWOOD", "WWE");
     private static final List<String> QUESTION_TYPES = List.of("LIST", "CHRONOLOGY");
 
@@ -42,16 +45,17 @@ public class QuizDraftGenerator implements Generator {
 
         String category = CATEGORIES.get(random.nextInt(CATEGORIES.size()));
         String questionType = QUESTION_TYPES.get(random.nextInt(QUESTION_TYPES.size()));
-        generateWithFallback(apiKey, category, questionType,
+        LocalDate asOfDate = LocalDate.now(QUIZ_TIME_ZONE);
+        generateWithFallback(apiKey, category, questionType, asOfDate,
                 quizDraftDao.randomPrompts(category, 8), quizDraftDao.randomDeclineReasons(category, 10));
     }
 
-    private String generateWithFallback(String apiKey, String category, String questionType, List<String> referencePrompts,
+    private String generateWithFallback(String apiKey, String category, String questionType, LocalDate asOfDate, List<String> referencePrompts,
                                         List<String> declineReasons) throws Exception {
         Exception lastFailure = null;
         for (String model : configuredModels()) {
             try {
-                GeneratedQuiz generated = requestQuestion(apiKey, model, category, questionType, referencePrompts, declineReasons);
+                GeneratedQuiz generated = requestQuestion(apiKey, model, category, questionType, asOfDate, referencePrompts, declineReasons);
                 validate(generated, category, questionType);
                 List<QuizDraftAnswerRecord> answers = new ArrayList<>();
                 for (int index = 0; index < generated.answers().size(); index++) {
@@ -95,11 +99,14 @@ public class QuizDraftGenerator implements Generator {
         return false;
     }
 
-    private GeneratedQuiz requestQuestion(String apiKey, String model, String category, String questionType,
+    private GeneratedQuiz requestQuestion(String apiKey, String model, String category, String questionType, LocalDate asOfDate,
                                           List<String> referencePrompts, List<String> declineReasons) throws Exception {
         String prompt = """
                 Generate one accurate, fun Quiz Royale question.
                 Category: %s. Type: %s.
+                Today's date is %s (Asia/Kolkata). Treat this as the factual cutoff: include results and releases
+                that occurred on or before this date, and exclude anything after it. Do not use stale cutoffs such as
+                2024 unless that is genuinely the latest event as of today's date.
 
                 LIST: players name any distinct correct answer in any order.
                 CHRONOLOGY: write a self-contained "Name the ... in reverse chronological order" question. Answers
@@ -136,7 +143,7 @@ public class QuizDraftGenerator implements Generator {
                     {"answer": "canonical answer", "aliases": ["alias"], "hint": "required for chronology; null for list"}
                   ]
                 }
-                """.formatted(category, questionType, referencePrompts.isEmpty() ? "(none)" : String.join(" | ", referencePrompts),
+                """.formatted(category, questionType, asOfDate, referencePrompts.isEmpty() ? "(none)" : String.join(" | ", referencePrompts),
                 category, declineReasons.isEmpty() ? "(none)" : "- " + String.join("\n- ", declineReasons));
         String apiUrl = Optional.ofNullable(System.getenv("LLM_API_URL"))
                 .filter(value -> !value.isBlank()).orElse("https://api.openai.com/v1/chat/completions");

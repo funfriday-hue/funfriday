@@ -20,6 +20,7 @@ import lombok.Data;
         ,@JsonSubTypes.Type(value = QuizRoyaleAction.class, name = "QUIZ_ANSWER")
         ,@JsonSubTypes.Type(value = QuizRoyaleAction.class, name = "QUIZ_TIMEOUT")
         ,@JsonSubTypes.Type(value = QuizRoyaleAction.class, name = "QUIZ_PASS")
+        ,@JsonSubTypes.Type(value = QuizRoyaleAction.class, name = "QUIZ_START_QUESTION")
 })
 public abstract class GameAction {
     private String type;

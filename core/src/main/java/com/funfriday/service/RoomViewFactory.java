@@ -107,6 +107,7 @@ public class RoomViewFactory {
             Map<String, Object> meta = new HashMap<>();
             meta.put("finished", data.isFinished());
             meta.put("startTime", data.getStartTime());
+            meta.put("playStartsAtMillis", data.getPlayStartsAtMillis());
             if (data.getEndTimeMillis() > 0) {
                 meta.put("remainingSeconds", data.getRemainingSeconds());
             }
@@ -138,6 +139,10 @@ public class RoomViewFactory {
                 meta.put("question", q.getQuestion().getPrompt());
                 meta.put("category", q.getQuestion().getCategory().name());
                 meta.put("questionType", q.getQuestion().getType().name());
+                meta.put("questionNumber", q.getQuestionIndex() + 1);
+                meta.put("questionCount", q.getQuestions().size());
+                meta.put("questionActive", q.isQuestionActive());
+                meta.put("questionTransitionEndsAtMillis", q.getQuestionTransitionEndsAtMillis());
                 meta.put("playMode", q.getGameConfiguration().getPlayMode().name());
                 meta.put("acceptedAnswers", q.getAcceptedAnswers());
                 if (q.getQuestion().getType().name().equals("LIST")) {
@@ -154,6 +159,31 @@ public class RoomViewFactory {
                 meta.put("strikeLimit", q.getGameConfiguration().getStrikeLimit());
                 meta.put("lastEvent", q.getLastEvent());
                 if (q.isFinished()) {
+                    List<Map<String, Object>> questionResults = q.getQuestionResults().stream().map(result -> {
+                        Map<String, Object> resultView = new LinkedHashMap<>();
+                        resultView.put("questionNumber", result.getQuestionNumber());
+                        resultView.put("prompt", result.getPrompt());
+                        resultView.put("category", result.getCategory().name());
+                        resultView.put("questionType", result.getQuestionType().name());
+                        resultView.put("answers", result.getAnswers());
+                        resultView.put("hints", result.getHints());
+                        resultView.put("answeredAnswerIndexes", result.getAnsweredAnswerIndexes());
+                        return resultView;
+                    }).toList();
+                    // A room begun before this feature may not have a snapshot yet; always retain a review of its final question.
+                    if (questionResults.isEmpty()) {
+                        Map<String, Object> finalQuestion = new LinkedHashMap<>();
+                        finalQuestion.put("questionNumber", q.getQuestionIndex() + 1);
+                        finalQuestion.put("prompt", q.getQuestion().getPrompt());
+                        finalQuestion.put("category", q.getQuestion().getCategory().name());
+                        finalQuestion.put("questionType", q.getQuestion().getType().name());
+                        finalQuestion.put("answers", q.getQuestion().getAnswers().stream().map(answer -> answer.getValue()).toList());
+                        finalQuestion.put("hints", q.getQuestion().getChronologyHints());
+                        finalQuestion.put("answeredAnswerIndexes", q.getAnsweredAnswerIndexes());
+                        questionResults = List.of(finalQuestion);
+                    }
+                    meta.put("questionResults", questionResults);
+                    // Retained briefly for clients running the previous UI build during a rolling deploy.
                     meta.put("allAnswers", q.getQuestion().getAnswers().stream().map(answer -> answer.getValue()).toList());
                     meta.put("allAnswerHints", q.getQuestion().getChronologyHints());
                     meta.put("answeredAnswerIndexes", q.getAnsweredAnswerIndexes());
@@ -165,7 +195,7 @@ public class RoomViewFactory {
             publicGameData = meta;
         }
 
-        return new RoomPublicView(room.getRoomId(), room.getStatus().name(), room.getGameData() == null ? null : room.getGameData().getGameConfiguration(), room.getType(), room.getStartTime(), host.get(), players, publicGameData);
+        return new RoomPublicView(room.getRoomId(), room.getStatus().name(), room.getGameData() == null ? null : room.getGameData().getGameConfiguration(), room.getType(), room.getInitialGameMode(), room.getStartTime(), host.get(), players, publicGameData);
     }
 
     // Build a private view for a specific playerId — includes only their sensitive info

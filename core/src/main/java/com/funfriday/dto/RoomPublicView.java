@@ -14,6 +14,7 @@ public class RoomPublicView {
     private String status;
     private GameConfiguration configuration;
     private String type;
+    private String initialGameMode;
     private long startTime;
     private PlayerPublic host;  // NEW: host info
     private List<PlayerPublic> players;

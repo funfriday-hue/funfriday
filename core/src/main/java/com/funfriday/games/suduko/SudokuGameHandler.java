@@ -33,11 +33,13 @@ public class SudokuGameHandler implements GameLogic, GameModeProvider {
         try {
             SudokuPuzzle puzzle = sudokuDao.selectRandomBySize(boardSize)
                     .orElseThrow(() -> new IllegalStateException("No Sudoku puzzle found for size " + boardSize));
-            return new SudokuData(
+            SudokuData data = new SudokuData(
                     parseGrid(puzzle.getGrid(), boardSize),
                     parseGrid(puzzle.getSolution(), boardSize),
                     boardSize
             );
+            data.setPlayStartsAtMillis(System.currentTimeMillis() + 5000);
+            return data;
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to load Sudoku puzzle for size " + boardSize, e);
         }

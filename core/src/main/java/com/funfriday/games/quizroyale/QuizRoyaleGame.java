@@ -21,14 +21,26 @@ public class QuizRoyaleGame implements GameLogic, GameModeProvider {
     @Override public GameData<?> initializeData(GameConfiguration rawConfiguration) {
         QuizRoyaleConfiguration configuration = (QuizRoyaleConfiguration) rawConfiguration;
         QuizRoyaleData data = new QuizRoyaleData();
-        data.setQuestion(sampleQuestion(configuration.getCategory(), configuration.getQuestionType()));
-        data.setTurnStartedAtMillis(System.currentTimeMillis());
+        data.setQuestions(sampleQuestions(configuration.getCategory(), configuration.getQuestionCount()));
+        data.setQuestionIndex(0);
+        data.setQuestion(data.getQuestions().get(0));
+        data.setQuestionActive(false);
+        data.setQuestionTransitionEndsAtMillis(System.currentTimeMillis() + 5000);
         return data;
     }
 
     @Override public void processMove(GameAction rawAction, GameData<?> rawData) {
         QuizRoyaleAction action = (QuizRoyaleAction) rawAction;
         QuizRoyaleData data = (QuizRoyaleData) rawData;
+        if ("QUIZ_START_QUESTION".equals(action.getType())) {
+            if (!data.isQuestionActive() && System.currentTimeMillis() >= data.getQuestionTransitionEndsAtMillis()) {
+                data.setQuestionActive(true);
+                resetTimer(data);
+                data.setLastEvent(null);
+            }
+            return;
+        }
+        if (!data.isQuestionActive()) throw new InvalidGameMoveException("The next question is about to start.", "QUESTION_TRANSITION");
         if (data.getGameConfiguration().getPlayMode() == QuizRoyalePlayMode.ALL_PLAY) {
             processAllPlay(action, data);
             return;
@@ -64,7 +76,7 @@ public class QuizRoyaleGame implements GameLogic, GameModeProvider {
         stats.setScore(stats.getCorrectAnswers());
         data.setLastEvent(stats.getPlayerName() + " found " + expected.getValue());
         if (data.getQuestion().getType() == QuizQuestionType.CHRONOLOGY) data.setChronologyIndex(data.getChronologyIndex() + 1);
-        if (data.getAcceptedAnswers().size() == data.getQuestion().getAnswers().size()) { finish(data); return; }
+        if (data.getAcceptedAnswers().size() == data.getQuestion().getAnswers().size()) { completeQuestion(data); return; }
         advanceTurn(data);
         if (data.getQuestion().getType() == QuizQuestionType.CHRONOLOGY) beginNextChronologyStep(data);
     }
@@ -72,11 +84,15 @@ public class QuizRoyaleGame implements GameLogic, GameModeProvider {
     private void processAllPlay(QuizRoyaleAction action, QuizRoyaleData data) {
         if ("QUIZ_TIMEOUT".equals(action.getType()) || turnExpired(data)) {
             activePlayerIds(data).stream().filter(id -> !data.getAllPlayAnsweredPlayerIds().contains(id)).forEach(id -> applyTimeoutStrike(data, id));
-            if (shouldFinishAfterElimination(data)) { finish(data); return; }
+            if (activePlayerIds(data).isEmpty()) { completeQuestion(data); return; }
             data.getAllPlayAnsweredPlayerIds().clear();
             data.setTurnStartedAtMillis(System.currentTimeMillis());
             data.setLastEvent("Time expired — a new All Play round has started.");
             return;
+        }
+        QuizRoyalePlayerStats actingStats = (QuizRoyalePlayerStats) data.getScoreBoard().get(action.getPlayerId());
+        if (actingStats == null || actingStats.getStatus() != PlayerStatus.ACTIVE) {
+            throw new InvalidGameMoveException("You have been eliminated from this question.", "PLAYER_ELIMINATED");
         }
         if ("QUIZ_PASS".equals(action.getType())) {
             if (data.getQuestion().getType() != QuizQuestionType.CHRONOLOGY) {
@@ -96,7 +112,7 @@ public class QuizRoyaleGame implements GameLogic, GameModeProvider {
         stats.setScore(stats.getCorrectAnswers());
         data.setLastEvent(stats.getPlayerName() + " found " + expected.getValue());
         if (data.getQuestion().getType() == QuizQuestionType.CHRONOLOGY) data.setChronologyIndex(data.getChronologyIndex() + 1);
-        if (data.getAcceptedAnswers().size() == data.getQuestion().getAnswers().size()) finish(data);
+        if (data.getAcceptedAnswers().size() == data.getQuestion().getAnswers().size()) completeQuestion(data);
         else {
             if (data.getQuestion().getType() == QuizQuestionType.CHRONOLOGY) beginNextChronologyStep(data);
             resetTimer(data);
@@ -114,13 +130,13 @@ public class QuizRoyaleGame implements GameLogic, GameModeProvider {
         recordStrike(data, playerId, "Passed this item.");
         boolean everyonePassed = data.getChronologyPassedPlayerIds().containsAll(data.getChronologyEligiblePlayerIds());
         if (!everyonePassed) {
-            if (shouldFinishAfterElimination(data)) finish(data);
+            if (activePlayerIds(data).isEmpty()) completeQuestion(data);
             return;
         }
 
         revealChronologyAnswer(data, "All players passed");
-        if (data.getAcceptedAnswers().size() == data.getQuestion().getAnswers().size() || shouldFinishAfterElimination(data)) {
-            finish(data);
+        if (data.getAcceptedAnswers().size() == data.getQuestion().getAnswers().size() || activePlayerIds(data).isEmpty()) {
+            completeQuestion(data);
             return;
         }
         beginNextChronologyStep(data);
@@ -129,8 +145,7 @@ public class QuizRoyaleGame implements GameLogic, GameModeProvider {
 
     private void applyStrike(QuizRoyaleData data, String playerId, String reason) {
         recordStrike(data, playerId, reason);
-        // Round Robin only ends once every player has exhausted their strikes.
-        if (activePlayerIds(data).isEmpty()) { finish(data); return; }
+        if (activePlayerIds(data).isEmpty()) { completeQuestion(data); return; }
         advanceTurn(data);
     }
 
@@ -144,7 +159,7 @@ public class QuizRoyaleGame implements GameLogic, GameModeProvider {
         if (everyonePassed) {
             revealChronologyAnswer(data, "All players passed");
             if (data.getAcceptedAnswers().size() == data.getQuestion().getAnswers().size() || activePlayerIds(data).isEmpty()) {
-                finish(data);
+                completeQuestion(data);
                 return;
             }
             advanceTurn(data);
@@ -152,7 +167,7 @@ public class QuizRoyaleGame implements GameLogic, GameModeProvider {
             return;
         }
 
-        if (activePlayerIds(data).isEmpty()) { finish(data); return; }
+        if (activePlayerIds(data).isEmpty()) { completeQuestion(data); return; }
         advanceTurn(data);
     }
 
@@ -174,7 +189,7 @@ public class QuizRoyaleGame implements GameLogic, GameModeProvider {
         stats.setStrikes(stats.getStrikes() + 1);
         data.setLastEvent(stats.getPlayerName() + " — " + reason);
         if (stats.getStrikes() >= data.getGameConfiguration().getStrikeLimit()) stats.setStatus(PlayerStatus.ELIMINATED);
-        if (shouldFinishAfterElimination(data)) { finish(data); return; }
+        if (activePlayerIds(data).isEmpty()) { completeQuestion(data); return; }
         resetTimer(data);
     }
 
@@ -209,10 +224,6 @@ public class QuizRoyaleGame implements GameLogic, GameModeProvider {
         }
     }
     private void resetTimer(QuizRoyaleData data) { data.setTurnStartedAtMillis(System.currentTimeMillis()); }
-    private boolean shouldFinishAfterElimination(QuizRoyaleData data) {
-        int activePlayers = activePlayerIds(data).size();
-        return activePlayers == 0 || (data.getTurnOrder().size() > 1 && activePlayers == 1);
-    }
     private String currentPlayerId(QuizRoyaleData data) { return data.getTurnOrder().isEmpty() ? null : data.getTurnOrder().get(data.getCurrentPlayerIndex()); }
     private List<String> activePlayerIds(QuizRoyaleData data) { return data.getTurnOrder().stream().filter(id -> data.getScoreBoard().get(id).getStatus() == PlayerStatus.ACTIVE).toList(); }
     private boolean turnExpired(QuizRoyaleData data) { return System.currentTimeMillis() - data.getTurnStartedAtMillis() > data.getGameConfiguration().getTurnSeconds() * 1000L; }
@@ -224,6 +235,46 @@ public class QuizRoyaleGame implements GameLogic, GameModeProvider {
         return data.getQuestion().getAnswers().stream().filter(answer -> !data.getAcceptedAnswers().contains(answer.getValue())).filter(answer -> answerMatcher.matches(submittedAnswer, answer)).findFirst().orElse(null);
     }
     private void finish(QuizRoyaleData data) { data.setFinished(true); data.getScoreBoard().values().forEach(stats -> { if (stats.getStatus() == PlayerStatus.ACTIVE) stats.setStatus(PlayerStatus.COMPLETED); }); }
+
+    /** Finishes the current question or starts the next one, restoring every player's per-question strikes. */
+    private void completeQuestion(QuizRoyaleData data) {
+        recordQuestionResult(data);
+        if (data.getQuestionIndex() + 1 >= data.getQuestions().size()) {
+            finish(data);
+            return;
+        }
+        data.setQuestionIndex(data.getQuestionIndex() + 1);
+        data.setQuestion(data.getQuestions().get(data.getQuestionIndex()));
+        data.getAcceptedAnswers().clear();
+        data.getAnsweredAnswerIndexes().clear();
+        data.getRevealedAnswerIndexes().clear();
+        data.getAllPlayAnsweredPlayerIds().clear();
+        data.getChronologyPassedPlayerIds().clear();
+        data.setChronologyIndex(0);
+        data.getScoreBoard().values().forEach(stats -> {
+            stats.setStatus(PlayerStatus.ACTIVE);
+            ((QuizRoyalePlayerStats) stats).setStrikes(0);
+        });
+        data.setTurnOrder(new ArrayList<>(data.getPlayerOrder()));
+        data.setCurrentPlayerIndex(0);
+        data.setChronologyEligiblePlayerIds(new ArrayList<>(data.getPlayerOrder()));
+        data.setQuestionActive(false);
+        data.setQuestionTransitionEndsAtMillis(System.currentTimeMillis() + 5000);
+        data.setLastEvent(null);
+    }
+
+    private void recordQuestionResult(QuizRoyaleData data) {
+        QuizQuestion question = data.getQuestion();
+        data.getQuestionResults().add(new QuizQuestionResult(
+                data.getQuestionIndex() + 1,
+                question.getPrompt(),
+                question.getCategory(),
+                question.getType(),
+                question.getAnswers().stream().map(QuizAnswer::getValue).toList(),
+                new ArrayList<>(question.getChronologyHints()),
+                new ArrayList<>(data.getAnsweredAnswerIndexes())
+        ));
+    }
 
     @Override public void updateStats(PlayerStats stats, GameData<?> data) { }
     @Override public boolean isGameOver(GameData<?> data) { return data.isFinished(); }
@@ -246,7 +297,13 @@ public class QuizRoyaleGame implements GameLogic, GameModeProvider {
         QuizRoyalePlayMode playMode;
         try { playMode = QuizRoyalePlayMode.valueOf(String.valueOf(payload.getOrDefault("playMode", "ROUND_ROBIN")).toUpperCase()); }
         catch (IllegalArgumentException exception) { playMode = QuizRoyalePlayMode.ROUND_ROBIN; }
-        return new QuizRoyaleConfiguration(category, QuizQuestionType.LIST, playMode, Math.max(1, Math.min(5, strikeLimit)), turnSeconds);
+        int questionCount;
+        try {
+            questionCount = Integer.parseInt(String.valueOf(payload.getOrDefault("questionCount", 1)));
+        } catch (NumberFormatException exception) {
+            questionCount = 1;
+        }
+        return new QuizRoyaleConfiguration(category, QuizQuestionType.LIST, playMode, Math.max(1, Math.min(5, strikeLimit)), turnSeconds, Math.max(1, Math.min(3, questionCount)));
     }
     @Override public List<GameModeDTO.ModeOption> getAvailableModes() {
         return List.of(
@@ -257,23 +314,28 @@ public class QuizRoyaleGame implements GameLogic, GameModeProvider {
         );
     }
 
-    private QuizQuestion sampleQuestion(QuizCategory category, QuizQuestionType type) {
+    private List<QuizQuestion> sampleQuestions(QuizCategory category, int questionCount) {
         try {
-            QuizQuestionRecord record = quizQuestionDao.selectRandomActiveByCategory(category.name())
-                    .orElseThrow(() -> new IllegalStateException("No active " + category.name() + " Quiz Royale questions found in MySQL."));
-            if (record.answers().isEmpty()) {
-                throw new IllegalStateException("Quiz Royale question " + record.questionKey() + " has no answers.");
+            List<QuizQuestion> questions = new ArrayList<>();
+            List<String> selectedKeys = new ArrayList<>();
+            for (int index = 0; index < questionCount; index++) {
+                QuizQuestionRecord record = quizQuestionDao.selectRandomActiveByCategoryExcluding(category.name(), selectedKeys)
+                        .orElseThrow(() -> new IllegalStateException("There are not enough distinct active " + category.name() + " Quiz Royale questions in MySQL."));
+                if (record.answers().isEmpty()) {
+                    throw new IllegalStateException("Quiz Royale question " + record.questionKey() + " has no answers.");
+                }
+                selectedKeys.add(record.questionKey());
+                questions.add(toQuizQuestion(record));
             }
-            return new QuizQuestion(
-                    record.questionKey(),
-                    QuizCategory.valueOf(record.category()),
-                    QuizQuestionType.valueOf(record.questionType()),
-                    record.prompt(),
-                    record.answers().stream().map(answer -> new QuizAnswer(answer.canonicalAnswer(), answer.aliases())).toList(),
-                    record.answers().stream().map(answer -> answer.hint()).toList()
-            );
+            return questions;
         } catch (java.sql.SQLException exception) {
             throw new IllegalStateException("Unable to load Quiz Royale question from MySQL.", exception);
         }
+    }
+
+    private QuizQuestion toQuizQuestion(QuizQuestionRecord record) {
+        return new QuizQuestion(record.questionKey(), QuizCategory.valueOf(record.category()), QuizQuestionType.valueOf(record.questionType()),
+                record.prompt(), record.answers().stream().map(answer -> new QuizAnswer(answer.canonicalAnswer(), answer.aliases())).toList(),
+                record.answers().stream().map(answer -> answer.hint()).toList());
     }
 }
