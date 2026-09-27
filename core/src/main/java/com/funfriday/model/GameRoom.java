@@ -169,8 +169,7 @@ public class GameRoom {
             }
 
             if (this.gameData != null && this.gameData.getEndTimeMillis() > 0) {
-                long playerTime = action.getClientTimestamp();
-                if (playerTime >= this.gameData.getEndTimeMillis()) {
+                if (System.currentTimeMillis() >= this.gameData.getEndTimeMillis()) {
                     throw new IllegalStateException("Game time has expired. No more moves allowed.");
                 }
             }
@@ -188,7 +187,7 @@ public class GameRoom {
             PlayerStats stats = this.gameData.getScoreBoard().get(action.getPlayerId());
             if (stats != null) {
                 this.gameLogic.updateStats(stats, this.gameData);
-                long elapsedMillis = System.currentTimeMillis() - this.startTime;
+                long elapsedMillis = Math.max(0, System.currentTimeMillis() - this.gameData.getPlayStartsAtMillis());
                 stats.setTimeInSeconds(elapsedMillis / 1000);
             }
 

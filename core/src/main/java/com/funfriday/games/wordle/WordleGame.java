@@ -128,6 +128,9 @@ public class WordleGame implements GameLogic, GameModeProvider {
             // Normal target race. First player to clear the required words wins.
             if (currentProgress >= activeMode.getTargetValue()) {
                 wStats.setStatus(PlayerStatus.COMPLETED);
+                if (wStats.getTimeTakenMillis() == 0) {
+                    wStats.setTimeTakenMillis(Math.max(0, System.currentTimeMillis() - data.getPlayStartsAtMillis()));
+                }
             }
         }
     }

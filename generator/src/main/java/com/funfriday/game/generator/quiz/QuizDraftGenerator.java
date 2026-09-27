@@ -29,7 +29,7 @@ import java.util.*;
 public class QuizDraftGenerator implements Generator {
     private static final ZoneId QUIZ_TIME_ZONE = ZoneId.of("Asia/Kolkata");
     private static final List<String> CATEGORIES = List.of("CRICKET", "FOOTBALL", "BOLLYWOOD", "WWE");
-    private static final List<String> QUESTION_TYPES = List.of("LIST", "CHRONOLOGY");
+    private static final List<String> QUESTION_TYPES = List.of("LIST", "CHRONOLOGY", "RANKED_LIST");
 
     private final QuizDraftDao quizDraftDao;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -61,12 +61,13 @@ public class QuizDraftGenerator implements Generator {
                 for (int index = 0; index < generated.answers().size(); index++) {
                     GeneratedAnswer answer = generated.answers().get(index);
                     answers.add(new QuizDraftAnswerRecord(0, answer.answer().trim(), index + 1,
-                            questionType.equals("CHRONOLOGY") ? answer.hint().trim() : null,
+                            (questionType.equals("CHRONOLOGY") || questionType.equals("RANKED_LIST")) ? answer.hint().trim() : null,
                             sanitizeAliases(answer.aliases(), answer.answer())));
                 }
                 String questionKey = "llm_" + category.toLowerCase(Locale.ROOT) + "_" + questionType.toLowerCase(Locale.ROOT)
                         + "_" + Instant.now().toEpochMilli() + "_" + UUID.randomUUID().toString().substring(0, 8);
-                long draftId = quizDraftDao.createDraft(questionKey, category, questionType, generated.prompt().trim(), model, answers);
+                long draftId = quizDraftDao.createDraft(questionKey, category, questionType, generated.prompt().trim(), model,
+                        asOfDate, answers);
                 log.info("Created Quiz Royale draft {} for {} {} using {}.", draftId, category, questionType, model);
                 return model;
             } catch (Exception exception) {
@@ -122,7 +123,14 @@ public class QuizDraftGenerator implements Generator {
                 Every chronology answer MUST include its concise hint that tells the player the corresponding
                 year/event/sequence position.
 
-                Use only well-established facts. Do not use future or speculative results. Include at least 8 answers.
+                RANKED_LIST: write a self-contained, finite ranking question such as "Name the top 20 ODI run
+                scorers." Answers MUST be in exact rank order (rank 1 first). Each answer MUST include a concise
+                value in hint, such as "18,426 runs". The game will hide every name and value until that answer is
+                found, and will display the ranking as of the separately stored sync date. Do not write an "as of"
+                date into the prompt itself and do not list any candidates in it.
+
+                Use only well-established facts. Do not use future or speculative results. Include at least 8 answers
+                for LIST and CHRONOLOGY, and at least 10 answers for RANKED_LIST.
                 Provide 1-4 useful, explicit aliases only when they are genuine alternate names, spellings, initials,
                 nicknames, or conventional abbreviations. Never generate partial title fragments as aliases.
 
@@ -140,7 +148,7 @@ public class QuizDraftGenerator implements Generator {
                 {
                   "prompt": "...",
                   "answers": [
-                    {"answer": "canonical answer", "aliases": ["alias"], "hint": "required for chronology; null for list"}
+                    {"answer": "canonical answer", "aliases": ["alias"], "hint": "required for chronology or ranked list; null for list"}
                   ]
                 }
                 """.formatted(category, questionType, asOfDate, referencePrompts.isEmpty() ? "(none)" : String.join(" | ", referencePrompts),
@@ -195,16 +203,19 @@ public class QuizDraftGenerator implements Generator {
         if (questionType.equals("CHRONOLOGY") && normalizedPrompt.matches(".*\\b(these|following|iconic|legendary|famous)\\b.*")) {
             throw new IllegalArgumentException("Chronology prompt refers to an unstated list of answers.");
         }
-        if (generated.answers().size() < 8) throw new IllegalArgumentException("LLM generated fewer than eight answers.");
+        int minimumAnswers = questionType.equals("RANKED_LIST") ? 10 : 8;
+        if (generated.answers().size() < minimumAnswers) {
+            throw new IllegalArgumentException("LLM generated fewer than " + minimumAnswers + " answers.");
+        }
         Set<String> uniqueAnswers = new HashSet<>();
         for (GeneratedAnswer answer : generated.answers()) {
             if (answer.answer() == null || answer.answer().isBlank()) throw new IllegalArgumentException("LLM generated a blank answer.");
             String normalized = answer.answer().replaceAll("[^A-Za-z0-9]", "").toLowerCase(Locale.ROOT);
-            if (questionType.equals("LIST") && !uniqueAnswers.add(normalized)) {
+            if ((questionType.equals("LIST") || questionType.equals("RANKED_LIST")) && !uniqueAnswers.add(normalized)) {
                 throw new IllegalArgumentException("LLM generated duplicate answer: " + answer.answer());
             }
-            if (questionType.equals("CHRONOLOGY") && (answer.hint() == null || answer.hint().isBlank())) {
-                throw new IllegalArgumentException("Chronology answer is missing its hint.");
+            if ((questionType.equals("CHRONOLOGY") || questionType.equals("RANKED_LIST")) && (answer.hint() == null || answer.hint().isBlank())) {
+                throw new IllegalArgumentException("Chronology or ranked-list answer is missing its hint/value.");
             }
         }
     }

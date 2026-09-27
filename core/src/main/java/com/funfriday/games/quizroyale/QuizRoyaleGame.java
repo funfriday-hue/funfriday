@@ -336,6 +336,6 @@ public class QuizRoyaleGame implements GameLogic, GameModeProvider {
     private QuizQuestion toQuizQuestion(QuizQuestionRecord record) {
         return new QuizQuestion(record.questionKey(), QuizCategory.valueOf(record.category()), QuizQuestionType.valueOf(record.questionType()),
                 record.prompt(), record.answers().stream().map(answer -> new QuizAnswer(answer.canonicalAnswer(), answer.aliases())).toList(),
-                record.answers().stream().map(answer -> answer.hint()).toList());
+                record.answers().stream().map(answer -> answer.hint()).toList(), record.lastSyncedAt());
     }
 }

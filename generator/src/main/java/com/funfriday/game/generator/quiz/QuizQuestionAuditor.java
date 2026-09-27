@@ -52,6 +52,8 @@ public class QuizQuestionAuditor implements Generator {
                 String status = result.suggestions().isEmpty() ? "CORRECT" : "PENDING";
                 long auditId = quizAuditDao.create(question.id(), question.questionKey(), question.category(), question.questionType(),
                         question.prompt(), model, status, objectMapper.writeValueAsString(result.suggestions()));
+                // A no-change audit still verifies the answer set against today's data, so refresh its displayed sync date.
+                if ("CORRECT".equals(status)) quizAuditDao.markQuestionSynced(question.id(), asOfDate);
                 log.info("Created Quiz Royale audit {} for {} using {} ({})", auditId, question.questionKey(), model, status);
                 return;
             } catch (Exception exception) {
@@ -66,6 +68,7 @@ public class QuizQuestionAuditor implements Generator {
     private AuditResult requestAudit(String apiKey, String model, QuizQuestionRecord question, LocalDate asOfDate, List<String> declinedFeedback) throws Exception {
         String questionJson = objectMapper.writeValueAsString(Map.of(
                 "category", question.category(), "type", question.questionType(), "prompt", question.prompt(),
+                "previousLastSyncedAt", question.lastSyncedAt() == null ? "" : question.lastSyncedAt().toString(),
                 "answers", question.answers().stream().map(answer -> Map.of(
                         "answer", answer.canonicalAnswer(), "displayOrder", answer.displayOrder(),
                         "hint", answer.hint() == null ? "" : answer.hint(), "aliases", answer.aliases())).toList()));
@@ -75,6 +78,10 @@ public class QuizQuestionAuditor implements Generator {
                 after it. Do not assume an older knowledge cutoff (for example 2024) is current.
                 For LIST questions, every valid answer must be present exactly once. For CHRONOLOGY questions, the
                 answer set must be complete, ordered newest-to-oldest, and every answer must have the correct hint.
+                For RANKED_LIST questions, audit the live ranking as of the audit date above, regardless of the
+                previousLastSyncedAt value in the JSON. The old sync date is metadata only, not a historical cutoff.
+                Ensure ranks, included answers, and displayed values are current. Use ADD/REMOVE pairs if an entry or
+                its value/rank must change; ADD displayOrder is the desired final one-based rank and hint is the value.
                 Do not invent uncertain facts. Return no suggestions if it is already correct.
 
                 Question and current answers JSON:
@@ -91,7 +98,7 @@ public class QuizQuestionAuditor implements Generator {
                     {"action":"REMOVE","canonicalAnswer":"...","displayOrder":0,"hint":null,"aliases":[],"reason":"why this answer is invalid"}
                   ]
                 }
-                Only use ADD or REMOVE. For chronology ADD, displayOrder is the desired final one-based position.
+                Only use ADD or REMOVE. For chronology and ranked-list ADD, displayOrder is the desired final one-based position.
                 Never add partial film titles or other weak aliases.
                 """.formatted(asOfDate, questionJson, declinedFeedback.isEmpty() ? "(none)" : "- " + String.join("\n- ", declinedFeedback));
         String apiUrl = Optional.ofNullable(System.getenv("LLM_API_URL"))
@@ -123,7 +130,7 @@ public class QuizQuestionAuditor implements Generator {
         for (AuditSuggestion suggestion : result.suggestions()) {
             if (!"ADD".equals(suggestion.action()) && !"REMOVE".equals(suggestion.action())) throw new IllegalArgumentException("Audit has an invalid action.");
             if (suggestion.canonicalAnswer() == null || suggestion.canonicalAnswer().isBlank()) throw new IllegalArgumentException("Audit has a blank answer.");
-            if ("ADD".equals(suggestion.action()) && "CHRONOLOGY".equals(questionType)
+            if ("ADD".equals(suggestion.action()) && ("CHRONOLOGY".equals(questionType) || "RANKED_LIST".equals(questionType))
                     && (suggestion.hint() == null || suggestion.hint().isBlank())) throw new IllegalArgumentException("Chronology addition is missing a hint.");
             if (!seen.add(suggestion.action() + ":" + suggestion.canonicalAnswer().trim().toLowerCase(Locale.ROOT))) {
                 throw new IllegalArgumentException("Audit contains duplicate suggestions.");

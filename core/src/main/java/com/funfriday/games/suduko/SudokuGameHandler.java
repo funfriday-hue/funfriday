@@ -38,7 +38,8 @@ public class SudokuGameHandler implements GameLogic, GameModeProvider {
                     parseGrid(puzzle.getSolution(), boardSize),
                     boardSize
             );
-            data.setPlayStartsAtMillis(System.currentTimeMillis() + 5000);
+            long playStartsAt = System.currentTimeMillis() + 5000;
+            data.setPlayStartsAtMillis(playStartsAt);
             return data;
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to load Sudoku puzzle for size " + boardSize, e);
@@ -75,7 +76,7 @@ public class SudokuGameHandler implements GameLogic, GameModeProvider {
         } else if ("SUDOKU_GIVE_UP".equals(sAction.getType())) {
             PlayerStats stats = sData.getScoreBoard().get(playerId);
             if (stats != null) {
-                stats.setTimeInSeconds((System.currentTimeMillis() - data.getStartTime()) / 1000);
+                stats.setTimeInSeconds(Math.max(0, (System.currentTimeMillis() - data.getPlayStartsAtMillis()) / 1000));
                 stats.setStatus(PlayerStatus.GIVEN_UP);
                 log.info("PLAYER_EXIT: {} conceded match", playerId);
             }
@@ -114,13 +115,15 @@ public class SudokuGameHandler implements GameLogic, GameModeProvider {
         sStats.setScore((int) progressPercentage);
 
         // 4. Handle game completion
+        long elapsedMillis = Math.max(0, System.currentTimeMillis() - data.getPlayStartsAtMillis());
         if (totalSolvedUnits == maxUnits) {
             sStats.setStatus(PlayerStatus.COMPLETED);
+            sStats.setTotalTimeMillis(elapsedMillis);
         }
 
         // Store raw milliseconds
         if (sStats.getStatus() == PlayerStatus.ACTIVE) {
-            sStats.setTotalTimeMillis(System.currentTimeMillis() - data.getStartTime());
+            sStats.setTotalTimeMillis(elapsedMillis);
         }
     }
 
@@ -242,4 +245,5 @@ public class SudokuGameHandler implements GameLogic, GameModeProvider {
                     .map(mode -> new GameModeDTO.ModeOption(mode.name(), mode.getDisplayName()))
                     .toList();
     }
+
 }

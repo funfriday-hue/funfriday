@@ -46,6 +46,7 @@ public class RoomViewFactory {
                             statMap.put("solved", wps.getStatus() == PlayerStatus.COMPLETED);
                             // time in seconds -> prefer timeInSeconds field
                             statMap.put("timeElapsedSeconds", wps.getTimeInSeconds());
+                            statMap.put("completionTimeMillis", wps.getTimeTakenMillis());
                             statMap.put("currentWordAttempts", wps.getCurrentWordAttempts());
                         } else {
                             // Fallback: count per-player attempts list length (may reflect current word attempts)
@@ -75,6 +76,7 @@ public class RoomViewFactory {
                             // time: prefer totalTimeMillis on SudokuPlayerStats if present, convert to seconds
                             long millis = sps.getTotalTimeMillis();
                             statMap.put("timeElapsedSeconds", millis / 1000);
+                            statMap.put("completionTimeMillis", millis);
                         } else {
                             statMap.put("percentSolved", 0.0);
                             statMap.put("timeElapsedSeconds", 0L);
@@ -108,6 +110,8 @@ public class RoomViewFactory {
             meta.put("finished", data.isFinished());
             meta.put("startTime", data.getStartTime());
             meta.put("playStartsAtMillis", data.getPlayStartsAtMillis());
+            meta.put("serverNowMillis", System.currentTimeMillis());
+            meta.put("endTimeMillis", data.getEndTimeMillis());
             if (data.getEndTimeMillis() > 0) {
                 meta.put("remainingSeconds", data.getRemainingSeconds());
             }
@@ -145,8 +149,19 @@ public class RoomViewFactory {
                 meta.put("questionTransitionEndsAtMillis", q.getQuestionTransitionEndsAtMillis());
                 meta.put("playMode", q.getGameConfiguration().getPlayMode().name());
                 meta.put("acceptedAnswers", q.getAcceptedAnswers());
-                if (q.getQuestion().getType().name().equals("LIST")) {
+                meta.put("lastSyncedAt", q.getQuestion().getLastSyncedAt() == null ? null : q.getQuestion().getLastSyncedAt().toString());
+                if (q.getQuestion().getType().name().equals("LIST") || q.getQuestion().getType().name().equals("RANKED_LIST")) {
                     meta.put("totalAnswerCount", q.getQuestion().getAnswers().size());
+                }
+                if (q.getQuestion().getType().name().equals("RANKED_LIST")) {
+                    meta.put("rankedAnswers", java.util.stream.IntStream.range(0, q.getQuestion().getAnswers().size()).mapToObj(index -> {
+                        Map<String, Object> row = new LinkedHashMap<>();
+                        row.put("rank", index + 1);
+                        row.put("answer", q.getQuestion().getAnswers().get(index).getValue());
+                        row.put("value", index < q.getQuestion().getChronologyHints().size() ? q.getQuestion().getChronologyHints().get(index) : null);
+                        row.put("revealed", q.getAnsweredAnswerIndexes().contains(index));
+                        return row;
+                    }).toList());
                 }
                 meta.put("currentPlayerId", q.getTurnOrder().isEmpty() ? null : q.getTurnOrder().get(q.getCurrentPlayerIndex()));
                 meta.put("timeoutCoordinatorId", q.getTurnOrder().stream()

@@ -1,6 +1,7 @@
 package com.funfriday.db.model;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 
 public record QuizQuestionDraftRecord(
@@ -9,6 +10,7 @@ public record QuizQuestionDraftRecord(
         String category,
         String questionType,
         String prompt,
+        LocalDate lastSyncedAt,
         String status,
         String model,
         Instant createdAt,

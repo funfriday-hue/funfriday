@@ -6,6 +6,7 @@ import com.funfriday.db.model.QuizAuditSuggestionRecord;
 
 import java.sql.*;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -160,6 +161,7 @@ public class QuizAuditDao {
 
                 deleteAnswers(connection, questionId);
                 insertAnswers(connection, questionId, finalAnswers);
+                markQuestionSynced(connection, questionId, LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")));
                 if (!markAccepted(connection, auditId)) throw new SQLException("Audit is no longer pending.");
                 connection.commit();
                 return true;
@@ -167,6 +169,24 @@ public class QuizAuditDao {
                 connection.rollback();
                 throw exception;
             }
+        }
+    }
+
+    /** A successful audit refreshes the date presented to players in the same transaction. */
+    public void markQuestionSynced(long questionId, LocalDate syncedAt) throws SQLException {
+        try (Connection connection = connectionProvider.getConnection()) {
+            markQuestionSynced(connection, questionId, syncedAt);
+        }
+    }
+
+    private void markQuestionSynced(Connection connection, long questionId, LocalDate syncedAt) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+                UPDATE quiz_questions SET last_synced_at = ?
+                WHERE id = ?
+                """)) {
+            statement.setObject(1, syncedAt);
+            statement.setLong(2, questionId);
+            statement.executeUpdate();
         }
     }
 

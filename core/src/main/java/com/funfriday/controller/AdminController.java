@@ -14,6 +14,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 
@@ -23,6 +25,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 @Slf4j
 public class AdminController {
+    private static final ZoneId QUIZ_TIME_ZONE = ZoneId.of("Asia/Kolkata");
     private final AdminAuthService adminAuthService;
     private final QuizDraftDao quizDraftDao;
     private final QuizAuditDao quizAuditDao;
@@ -141,7 +144,7 @@ public class AdminController {
                                          @RequestBody UpdateDraftRequest request) {
         if (!adminAuthService.isAuthorized(authorization)) return unauthorized();
         try {
-            return quizDraftDao.updateDraft(draftId, request.prompt(), toAnswerRecords(request))
+            return quizDraftDao.updateDraft(draftId, request.prompt(), LocalDate.now(QUIZ_TIME_ZONE), toAnswerRecords(request))
                     ? ResponseEntity.ok(Map.of("status", "SAVED"))
                     : ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "Draft is no longer awaiting review."));
         } catch (IllegalArgumentException exception) {
@@ -158,7 +161,7 @@ public class AdminController {
                                                   @RequestBody UpdateDraftRequest request) {
         if (!adminAuthService.isAuthorized(authorization)) return unauthorized();
         try {
-            return quizDraftDao.updateActiveQuestion(questionId, request.prompt(), toAnswerRecords(request))
+            return quizDraftDao.updateActiveQuestion(questionId, request.prompt(), LocalDate.now(QUIZ_TIME_ZONE), toAnswerRecords(request))
                     ? ResponseEntity.ok(Map.of("status", "SAVED"))
                     : ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "Question is no longer active."));
         } catch (IllegalArgumentException exception) {
@@ -218,7 +221,7 @@ public class AdminController {
     private record AddPasswordRequest(String label, String password) { }
     private record DeclineDraftRequest(String reason) { }
     private record DeclineAuditRequest(String reason) { }
-    private record UpdateDraftRequest(String prompt, List<UpdateDraftAnswerRequest> answers) { }
+    private record UpdateDraftRequest(String prompt, LocalDate lastSyncedAt, List<UpdateDraftAnswerRequest> answers) { }
     private record UpdateDraftAnswerRequest(long id, String canonicalAnswer, int displayOrder, String hint, List<String> aliases) { }
     private record AuditUpdateRequest(List<AuditSuggestionRequest> suggestions) { }
     private record AuditSuggestionRequest(String action, String canonicalAnswer, int displayOrder, String hint, List<String> aliases, String reason) { }

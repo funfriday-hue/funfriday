@@ -1,3 +1,3 @@
 package com.funfriday.games.quizroyale;
 
-public enum QuizQuestionType { LIST, CHRONOLOGY }
+public enum QuizQuestionType { LIST, CHRONOLOGY, RANKED_LIST }

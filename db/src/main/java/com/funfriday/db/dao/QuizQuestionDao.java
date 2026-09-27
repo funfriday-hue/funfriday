@@ -14,7 +14,7 @@ import java.util.Optional;
 
 public class QuizQuestionDao {
     private static final String SELECT_RANDOM_ACTIVE_QUESTION = """
-            SELECT id, question_key, category, question_type, prompt
+            SELECT id, question_key, category, question_type, prompt, last_synced_at
             FROM quiz_questions
             WHERE category = ? AND is_active = TRUE
             ORDER BY RAND()
@@ -47,7 +47,7 @@ public class QuizQuestionDao {
 
     public Optional<QuizQuestionRecord> selectRandomActiveByCategoryExcluding(String category, List<String> excludedQuestionKeys) throws SQLException {
         String exclusions = excludedQuestionKeys.isEmpty() ? "" : " AND question_key NOT IN (" + String.join(",", java.util.Collections.nCopies(excludedQuestionKeys.size(), "?")) + ")";
-        String query = "SELECT id, question_key, category, question_type, prompt FROM quiz_questions WHERE category = ? AND is_active = TRUE" + exclusions + " ORDER BY RAND() LIMIT 1";
+        String query = "SELECT id, question_key, category, question_type, prompt, last_synced_at FROM quiz_questions WHERE category = ? AND is_active = TRUE" + exclusions + " ORDER BY RAND() LIMIT 1";
         try (Connection connection = connectionProvider.getConnection();
              PreparedStatement questionStatement = connection.prepareStatement(query)) {
             questionStatement.setString(1, category);
@@ -63,6 +63,7 @@ public class QuizQuestionDao {
                         resultSet.getString("category"),
                         resultSet.getString("question_type"),
                         resultSet.getString("prompt"),
+                        resultSet.getObject("last_synced_at", java.time.LocalDate.class),
                         answers
                 ));
             }
@@ -72,7 +73,7 @@ public class QuizQuestionDao {
     public Optional<QuizQuestionRecord> selectRandomActive() throws SQLException {
         try (Connection connection = connectionProvider.getConnection();
              PreparedStatement questionStatement = connection.prepareStatement("""
-                     SELECT id, question_key, category, question_type, prompt
+                     SELECT id, question_key, category, question_type, prompt, last_synced_at
                      FROM quiz_questions question
                      WHERE is_active = TRUE
                        AND NOT EXISTS (
@@ -86,6 +87,7 @@ public class QuizQuestionDao {
                 long questionId = resultSet.getLong("id");
                 return Optional.of(new QuizQuestionRecord(questionId, resultSet.getString("question_key"),
                         resultSet.getString("category"), resultSet.getString("question_type"), resultSet.getString("prompt"),
+                        resultSet.getObject("last_synced_at", java.time.LocalDate.class),
                         selectAnswers(connection, questionId)));
             }
         }
