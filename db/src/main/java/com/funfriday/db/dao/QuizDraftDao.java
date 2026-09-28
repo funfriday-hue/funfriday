@@ -188,6 +188,10 @@ public class QuizDraftDao {
                 }
                 List<Long> existingAnswerIds = selectAnswerIds(connection, questionId);
                 List<Long> submittedAnswerIds = orderedAnswers.stream().map(QuizDraftAnswerRecord::id).filter(id -> id > 0).toList();
+                // display_order is unique per question. Move all current rows out of the
+                // requested range before inserting or reordering answers, otherwise an
+                // insertion at position 1 can collide with the old position 1 row.
+                moveAnswersOutOfOrderRange(connection, questionId);
                 for (QuizDraftAnswerRecord answer : orderedAnswers) {
                     if (answer.id() > 0) updateAnswer(connection, questionId, answer, active);
                     else insertAnswers(connection, questionId, List.of(answer));
@@ -321,6 +325,17 @@ public class QuizDraftDao {
             }
         }
         return answerIds;
+    }
+
+    private void moveAnswersOutOfOrderRange(Connection connection, long questionId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+                UPDATE quiz_answers
+                SET display_order = display_order + 1000000
+                WHERE question_id = ?
+                """)) {
+            statement.setLong(1, questionId);
+            statement.executeUpdate();
+        }
     }
 
     private void deleteAnswer(Connection connection, long answerId) throws SQLException {
