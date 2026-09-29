@@ -8,6 +8,7 @@ import com.funfriday.db.model.QuizAnswerRecord;
 import com.funfriday.db.model.QuizQuestionRecord;
 import com.funfriday.game.generator.Generator;
 import com.funfriday.game.generator.GeneratorSchedule;
+import com.funfriday.llm.LlmJsonClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -31,12 +32,13 @@ public class QuizQuestionAuditor implements Generator {
     private static final ZoneId QUIZ_TIME_ZONE = ZoneId.of("Asia/Kolkata");
     private final QuizQuestionDao quizQuestionDao;
     private final QuizAuditDao quizAuditDao;
+    private final LlmJsonClient llmJsonClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
     public void generate() throws Exception {
         String apiKey = System.getenv("LLM_API_KEY");
-        if (apiKey == null || apiKey.isBlank()) {
+        if (!llmJsonClient.isConfigured()) {
             log.warn("Quiz audit skipped: LLM_API_KEY is not configured.");
             return;
         }
@@ -45,16 +47,16 @@ public class QuizQuestionAuditor implements Generator {
         List<String> declinedFeedback = quizAuditDao.randomDeclineReasons(question.category(), 10);
         LocalDate asOfDate = LocalDate.now(QUIZ_TIME_ZONE);
         Exception lastFailure = null;
-        for (String model : configuredModels()) {
+        for (String model : List.of("configured-models")) {
             try {
                 AuditResult result = requestAudit(apiKey, model, question, asOfDate, declinedFeedback);
                 validate(result, question.questionType());
                 String status = result.suggestions().isEmpty() ? "CORRECT" : "PENDING";
                 long auditId = quizAuditDao.create(question.id(), question.questionKey(), question.category(), question.questionType(),
-                        question.prompt(), model, status, objectMapper.writeValueAsString(result.suggestions()));
+                        question.prompt(), result.model(), status, objectMapper.writeValueAsString(result.suggestions()));
                 // A no-change audit still verifies the answer set against today's data, so refresh its displayed sync date.
                 if ("CORRECT".equals(status)) quizAuditDao.markQuestionSynced(question.id(), asOfDate);
-                log.info("Created Quiz Royale audit {} for {} using {} ({})", auditId, question.questionKey(), model, status);
+                log.info("Created Quiz Royale audit {} for {} using {} ({})", auditId, question.questionKey(), result.model(), status);
                 return;
             } catch (Exception exception) {
                 if (!isTransientFailure(exception)) throw exception;
@@ -101,19 +103,8 @@ public class QuizQuestionAuditor implements Generator {
                 Only use ADD or REMOVE. For chronology and ranked-list ADD, displayOrder is the desired final one-based position.
                 Never add partial film titles or other weak aliases.
                 """.formatted(asOfDate, questionJson, declinedFeedback.isEmpty() ? "(none)" : "- " + String.join("\n- ", declinedFeedback));
-        String apiUrl = Optional.ofNullable(System.getenv("LLM_API_URL"))
-                .filter(value -> !value.isBlank()).orElse("https://api.openai.com/v1/chat/completions");
-        String body = objectMapper.writeValueAsString(Map.of(
-                "model", model, "temperature", 0.1, "response_format", Map.of("type", "json_object"),
-                "messages", List.of(Map.of("role", "system", "content", "You are a meticulous trivia fact-checker. Return valid JSON only."),
-                        Map.of("role", "user", "content", prompt))));
-        HttpResponse<String> response = HttpClient.newHttpClient().send(HttpRequest.newBuilder(URI.create(apiUrl))
-                .timeout(Duration.ofSeconds(90)).header("Authorization", "Bearer " + apiKey)
-                .header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(body)).build(), HttpResponse.BodyHandlers.ofString());
-        if (response.statusCode() / 100 != 2) throw new LlmRequestException(response.statusCode(), response.body());
-        JsonNode content = objectMapper.readTree(response.body()).path("choices").path(0).path("message").path("content");
-        if (content.asText().isBlank()) throw new IllegalStateException("LLM audit response did not contain content.");
-        JsonNode suggestions = objectMapper.readTree(stripCodeFence(content.asText())).path("suggestions");
+        LlmJsonClient.Completion completion = llmJsonClient.complete("You are a meticulous trivia fact-checker. Return valid JSON only.", prompt, 0.1);
+        JsonNode suggestions = completion.json().path("suggestions");
         List<AuditSuggestion> values = new ArrayList<>();
         for (JsonNode suggestion : suggestions) {
             List<String> aliases = new ArrayList<>();
@@ -122,7 +113,7 @@ public class QuizQuestionAuditor implements Generator {
                     suggestion.path("displayOrder").asInt(0), suggestion.path("hint").isNull() ? null : suggestion.path("hint").asText(),
                     aliases, suggestion.path("reason").asText()));
         }
-        return new AuditResult(values);
+        return new AuditResult(completion.model(), values);
     }
 
     private void validate(AuditResult result, String questionType) {
@@ -150,7 +141,7 @@ public class QuizQuestionAuditor implements Generator {
     }
 
     private String stripCodeFence(String value) { return value.trim().replaceFirst("^```(?:json)?\\s*", "").replaceFirst("\\s*```$", ""); }
-    private record AuditResult(List<AuditSuggestion> suggestions) { }
+    private record AuditResult(String model, List<AuditSuggestion> suggestions) { }
     private record AuditSuggestion(String action, String canonicalAnswer, int displayOrder, String hint, List<String> aliases, String reason) { }
     private static final class LlmRequestException extends IllegalStateException { private final int status; private LlmRequestException(int status, String message) { super("LLM audit request failed: HTTP " + status + " — " + message); this.status = status; } }
 }

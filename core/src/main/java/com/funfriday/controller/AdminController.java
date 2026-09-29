@@ -7,6 +7,7 @@ import com.funfriday.db.model.QuizDraftAnswerRecord;
 import com.funfriday.db.model.QuizAuditSuggestionRecord;
 import com.funfriday.db.model.QuizQuestionDraftRecord;
 import com.funfriday.service.AdminAuthService;
+import com.funfriday.service.QuizQuestionCreator;
 import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -30,6 +31,7 @@ public class AdminController {
     private final QuizDraftDao quizDraftDao;
     private final QuizAuditDao quizAuditDao;
     private final ObjectMapper objectMapper;
+    private final QuizQuestionCreator quizQuestionCreator;
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody LoginRequest request) {
@@ -40,6 +42,49 @@ public class AdminController {
                     : ResponseEntity.ok(Map.of("token", token, "expiresAt", Instant.now().plusSeconds(12 * 60 * 60).toString()));
         } catch (Exception exception) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("message", "Unable to sign in."));
+        }
+    }
+
+    @PostMapping("/create-question")
+    public ResponseEntity<?> createQuestion(@RequestHeader(name = "Authorization", required = false) String authorization,
+                                            @RequestBody CreateQuestionRequest request) {
+        if (!adminAuthService.isAuthorized(authorization)) return unauthorized();
+        try {
+            QuizQuestionCreator.GeneratedQuestion question = quizQuestionCreator.generate(request.category(), request.questionType(), request.prompt(), request.hintGuidance());
+            log.info("Generated editor question preview for {} {} with {} answers using {}.",
+                    question.category(), question.questionType(), question.answers().size(), question.model());
+            List<Map<String, Object>> answers = question.answers().stream().map(answer -> Map.<String, Object>of(
+                    "answer", answer.answer(), "displayOrder", answer.displayOrder(),
+                    "hint", answer.hint() == null ? "" : answer.hint(), "aliases", answer.aliases())).toList();
+            return ResponseEntity.ok(Map.of("category", question.category(), "questionType", question.questionType(),
+                    "prompt", question.prompt(), "model", question.model(), "answers", answers));
+        } catch (QuizQuestionCreator.QuestionDoesNotFitException exception) {
+            return ResponseEntity.unprocessableEntity().body(Map.of("message", exception.getMessage()));
+        } catch (IllegalArgumentException exception) {
+            return ResponseEntity.badRequest().body(Map.of("message", exception.getMessage()));
+        } catch (Exception exception) {
+            log.error("Unable to create editor quiz draft", exception);
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("message", "Unable to generate question details. Please try again."));
+        }
+    }
+
+    @PostMapping("/create-question/draft")
+    public ResponseEntity<?> saveCreatedQuestion(@RequestHeader(name = "Authorization", required = false) String authorization,
+                                                 @RequestBody SaveCreatedQuestionRequest request) {
+        if (!adminAuthService.isAuthorized(authorization)) return unauthorized();
+        try {
+            QuizQuestionCreator.CreatedDraft draft = quizQuestionCreator.saveDraft(request.category(), request.questionType(), request.prompt(),
+                    request.model(), request.answers() == null ? List.of() : request.answers().stream()
+                            .map(answer -> new QuizQuestionCreator.GeneratedAnswer(answer.answer(), answer.displayOrder(), answer.hint(), answer.aliases()))
+                            .toList());
+            log.info("Saved editor question draft {} for {} {} with {} answers.", draft.draftId(), request.category(),
+                    request.questionType(), request.answers() == null ? 0 : request.answers().size());
+            return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("draftId", draft.draftId(), "status", "DRAFT"));
+        } catch (IllegalArgumentException exception) {
+            return ResponseEntity.badRequest().body(Map.of("message", exception.getMessage()));
+        } catch (Exception exception) {
+            log.error("Unable to save editor quiz draft", exception);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("message", "Unable to save draft."));
         }
     }
 
@@ -218,6 +263,9 @@ public class AdminController {
     }
 
     private record LoginRequest(String password) { }
+    private record CreateQuestionRequest(String category, String questionType, String prompt, String hintGuidance) { }
+    private record SaveCreatedQuestionRequest(String category, String questionType, String prompt, String model, List<CreateQuestionAnswerRequest> answers) { }
+    private record CreateQuestionAnswerRequest(String answer, int displayOrder, String hint, List<String> aliases) { }
     private record AddPasswordRequest(String label, String password) { }
     private record DeclineDraftRequest(String reason) { }
     private record DeclineAuditRequest(String reason) { }

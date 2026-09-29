@@ -6,6 +6,7 @@ import com.funfriday.db.dao.QuizDraftDao;
 import com.funfriday.db.model.QuizDraftAnswerRecord;
 import com.funfriday.game.generator.Generator;
 import com.funfriday.game.generator.GeneratorSchedule;
+import com.funfriday.llm.LlmJsonClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -32,13 +33,14 @@ public class QuizDraftGenerator implements Generator {
     private static final List<String> QUESTION_TYPES = List.of("LIST", "CHRONOLOGY", "RANKED_LIST");
 
     private final QuizDraftDao quizDraftDao;
+    private final LlmJsonClient llmJsonClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final Random random = new Random();
 
     @Override
     public void generate() throws Exception {
         String apiKey = System.getenv("LLM_API_KEY");
-        if (apiKey == null || apiKey.isBlank()) {
+        if (!llmJsonClient.isConfigured()) {
             log.warn("Quiz draft generation skipped: LLM_API_KEY is not configured.");
             return;
         }
@@ -54,7 +56,8 @@ public class QuizDraftGenerator implements Generator {
     private String generateWithFallback(String apiKey, String category, String questionType, LocalDate asOfDate, List<String> referencePrompts,
                                         List<String> crossCategoryPrompts, List<String> declineReasons) throws Exception {
         Exception lastFailure = null;
-        for (String model : configuredModels()) {
+        // LlmJsonClient owns configured-model fallback so this generation makes one logical request.
+        for (String model : List.of("configured-models")) {
             try {
                 GeneratedQuiz generated = requestQuestion(apiKey, model, category, questionType, asOfDate, referencePrompts, crossCategoryPrompts, declineReasons);
                 validate(generated, category, questionType);
@@ -67,10 +70,10 @@ public class QuizDraftGenerator implements Generator {
                 }
                 String questionKey = "llm_" + category.toLowerCase(Locale.ROOT) + "_" + questionType.toLowerCase(Locale.ROOT)
                         + "_" + Instant.now().toEpochMilli() + "_" + UUID.randomUUID().toString().substring(0, 8);
-                long draftId = quizDraftDao.createDraft(questionKey, category, questionType, generated.prompt().trim(), model,
+                long draftId = quizDraftDao.createDraft(questionKey, category, questionType, generated.prompt().trim(), generated.model(),
                         asOfDate, answers);
-                log.info("Created Quiz Royale draft {} for {} {} using {}.", draftId, category, questionType, model);
-                return model;
+                log.info("Created Quiz Royale draft {} for {} {} using {}.", draftId, category, questionType, generated.model());
+                return generated.model();
             } catch (Exception exception) {
                 if (!isTransientFailure(exception)) throw exception;
                 lastFailure = exception;
@@ -131,8 +134,9 @@ public class QuizDraftGenerator implements Generator {
                 found, and will display the ranking as of the separately stored sync date. Do not write an "as of"
                 date into the prompt itself and do not list any candidates in it.
 
-                Use only well-established facts. Do not use future or speculative results. Include at least 8 answers
-                for LIST and CHRONOLOGY, and at least 10 answers for RANKED_LIST.
+                Use only well-established facts. Do not use future or speculative results. A question may contain
+                between 8 and 75 answers: include at least 8 answers for LIST and CHRONOLOGY, and at least 10
+                answers for RANKED_LIST. Never return more than 75 answers.
                 Provide 1-4 useful, explicit aliases only when they are genuine alternate names, spellings, initials,
                 nicknames, or conventional abbreviations. Never generate partial title fragments as aliases.
 
@@ -162,37 +166,8 @@ public class QuizDraftGenerator implements Generator {
                 """.formatted(category, questionType, asOfDate, referencePrompts.isEmpty() ? "(none)" : String.join(" | ", referencePrompts),
                 category, crossCategoryPrompts.isEmpty() ? "(none)" : String.join(" | ", crossCategoryPrompts),
                 category, declineReasons.isEmpty() ? "(none)" : "- " + String.join("\n- ", declineReasons));
-        String apiUrl = Optional.ofNullable(System.getenv("LLM_API_URL"))
-                .filter(value -> !value.isBlank()).orElse("https://api.openai.com/v1/chat/completions");
-        String requestBody = objectMapper.writeValueAsString(Map.of(
-                "model", model,
-                "temperature", 0.2,
-                "response_format", Map.of("type", "json_object"),
-                "messages", List.of(
-                        Map.of("role", "system", "content", "You are a meticulous trivia editor. Return valid JSON only."),
-                        Map.of("role", "user", "content", prompt)
-                )
-        ));
-        HttpRequest request = HttpRequest.newBuilder(URI.create(apiUrl))
-                .timeout(Duration.ofSeconds(90))
-                .header("Authorization", "Bearer " + apiKey)
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(requestBody))
-                .build();
-        HttpResponse<String> response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
-        if (response.statusCode() / 100 != 2) {
-            String errorMessage;
-            try {
-                errorMessage = objectMapper.readTree(response.body()).path("error").path("message").asText(response.body());
-            } catch (Exception ignored) {
-                errorMessage = response.body();
-            }
-            throw new LlmRequestException(response.statusCode(), errorMessage);
-        }
-        JsonNode body = objectMapper.readTree(response.body());
-        String content = body.path("choices").path(0).path("message").path("content").asText();
-        if (content.isBlank()) throw new IllegalStateException("LLM response did not contain message content.");
-        JsonNode generated = objectMapper.readTree(stripCodeFence(content));
+        LlmJsonClient.Completion completion = llmJsonClient.complete("You are a meticulous trivia editor. Return valid JSON only.", prompt, 0.2);
+        JsonNode generated = completion.json();
         List<GeneratedAnswer> answers = new ArrayList<>();
         for (JsonNode answer : generated.path("answers")) {
             List<String> aliases = new ArrayList<>();
@@ -200,7 +175,7 @@ public class QuizDraftGenerator implements Generator {
             answers.add(new GeneratedAnswer(answer.path("answer").asText(), aliases,
                     answer.path("hint").isNull() ? null : answer.path("hint").asText()));
         }
-        return new GeneratedQuiz(generated.path("prompt").asText(), answers);
+        return new GeneratedQuiz(completion.model(), generated.path("prompt").asText(), answers);
     }
 
     private void validate(GeneratedQuiz generated, String category, String questionType) {
@@ -215,6 +190,9 @@ public class QuizDraftGenerator implements Generator {
         int minimumAnswers = questionType.equals("RANKED_LIST") ? 10 : 8;
         if (generated.answers().size() < minimumAnswers) {
             throw new IllegalArgumentException("LLM generated fewer than " + minimumAnswers + " answers.");
+        }
+        if (generated.answers().size() > 75) {
+            throw new IllegalArgumentException("LLM generated more than 75 answers.");
         }
         Set<String> uniqueAnswers = new HashSet<>();
         for (GeneratedAnswer answer : generated.answers()) {
@@ -242,7 +220,7 @@ public class QuizDraftGenerator implements Generator {
         return value.trim().replaceFirst("^```(?:json)?\\s*", "").replaceFirst("\\s*```$", "");
     }
 
-    private record GeneratedQuiz(String prompt, List<GeneratedAnswer> answers) { }
+    private record GeneratedQuiz(String model, String prompt, List<GeneratedAnswer> answers) { }
     private record GeneratedAnswer(String answer, List<String> aliases, String hint) { }
 
     private static final class LlmRequestException extends IllegalStateException {
