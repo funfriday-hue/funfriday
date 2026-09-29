@@ -26,7 +26,7 @@ import java.util.*;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-@GeneratorSchedule(interval = "PT3H")
+@GeneratorSchedule(interval = "PT1H")
 public class QuizQuestionAuditor implements Generator {
     private static final ZoneId QUIZ_TIME_ZONE = ZoneId.of("Asia/Kolkata");
     private final QuizQuestionDao quizQuestionDao;

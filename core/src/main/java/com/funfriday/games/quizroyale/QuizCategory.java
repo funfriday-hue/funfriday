@@ -1,3 +1,3 @@
 package com.funfriday.games.quizroyale;
 
-public enum QuizCategory { CRICKET, BOLLYWOOD, WWE, FOOTBALL }
+public enum QuizCategory { CRICKET, FOOTBALL, BOLLYWOOD, WWE, INDIA }

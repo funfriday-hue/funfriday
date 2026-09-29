@@ -74,6 +74,26 @@ public class QuizDraftDao {
         return prompts;
     }
 
+    /** Random examples from other categories, labelled so an LLM can use their format without changing topic. */
+    public List<String> randomPromptsOutsideCategory(String category, int limit) throws SQLException {
+        List<String> prompts = new ArrayList<>();
+        try (Connection connection = connectionProvider.getConnection();
+             PreparedStatement statement = connection.prepareStatement("""
+                    SELECT category, prompt FROM quiz_questions
+                    WHERE category <> ?
+                    ORDER BY RAND() LIMIT ?
+                    """)) {
+            statement.setString(1, category);
+            statement.setInt(2, limit);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    prompts.add("[" + resultSet.getString("category") + "] " + resultSet.getString("prompt"));
+                }
+            }
+        }
+        return prompts;
+    }
+
     /**
      * Declined drafts are deleted from the playable-question tables, but their
      * editor feedback remains available to guide future LLM generations.

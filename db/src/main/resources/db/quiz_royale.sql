@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS quiz_questions (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     question_key VARCHAR(120) NOT NULL UNIQUE,
-    category ENUM('CRICKET', 'WWE', 'BOLLYWOOD', 'FOOTBALL') NOT NULL,
+    category ENUM('CRICKET', 'WWE', 'BOLLYWOOD', 'FOOTBALL', 'INDIA') NOT NULL,
     question_type ENUM('LIST', 'CHRONOLOGY', 'RANKED_LIST') NOT NULL,
     prompt TEXT NOT NULL,
     last_synced_at DATE NULL,
@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS quiz_answer_aliases (
 CREATE TABLE IF NOT EXISTS quiz_question_decline_feedback (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     question_key VARCHAR(120) NOT NULL,
-    category ENUM('CRICKET', 'WWE', 'BOLLYWOOD', 'FOOTBALL') NOT NULL,
+    category ENUM('CRICKET', 'WWE', 'BOLLYWOOD', 'FOOTBALL', 'INDIA') NOT NULL,
     question_type ENUM('LIST', 'CHRONOLOGY', 'RANKED_LIST') NOT NULL,
     prompt TEXT NOT NULL,
     decline_reason TEXT NOT NULL,
@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS quiz_question_audits (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     question_id BIGINT UNSIGNED NOT NULL,
     question_key VARCHAR(120) NOT NULL,
-    category ENUM('CRICKET', 'WWE', 'BOLLYWOOD', 'FOOTBALL') NOT NULL,
+    category ENUM('CRICKET', 'WWE', 'BOLLYWOOD', 'FOOTBALL', 'INDIA') NOT NULL,
     question_type ENUM('LIST', 'CHRONOLOGY', 'RANKED_LIST') NOT NULL,
     prompt TEXT NOT NULL,
     model VARCHAR(120) NULL,
