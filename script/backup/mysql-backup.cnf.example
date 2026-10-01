@@ -1,0 +1,6 @@
+# Copy this file to /etc/funfriday/mysql-backup.cnf on the server.
+# Do not commit the real file: it contains your database password.
+[client]
+user=root
+password=
+host=127.0.0.1

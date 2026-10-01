@@ -1,0 +1,2 @@
+# Daily GameData backup at 12:00 AM server time.
+0 0 * * * root /usr/local/sbin/funfriday-backup >> /var/log/funfriday-backup.log 2>&1
