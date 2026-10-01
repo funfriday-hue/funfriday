@@ -15,6 +15,9 @@ public record QuizQuestionDraftRecord(
         String model,
         Instant createdAt,
         Instant reviewedAt,
-        List<QuizDraftAnswerRecord> answers
+        List<QuizDraftAnswerRecord> answers,
+        String similarQuestionKey,
+        String similarQuestionPrompt,
+        Double similarityScore
 ) {
 }

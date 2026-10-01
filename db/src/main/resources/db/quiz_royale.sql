@@ -5,10 +5,13 @@ CREATE TABLE IF NOT EXISTS quiz_questions (
     question_type ENUM('LIST', 'CHRONOLOGY', 'RANKED_LIST') NOT NULL,
     prompt TEXT NOT NULL,
     last_synced_at DATE NULL,
+    similar_question_id BIGINT UNSIGNED NULL,
+    similarity_score DECIMAL(5,4) NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_quiz_questions_category_type (category, question_type, is_active)
+    INDEX idx_quiz_questions_category_type (category, question_type, is_active),
+    CONSTRAINT fk_quiz_questions_similar_question FOREIGN KEY (similar_question_id) REFERENCES quiz_questions(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS quiz_answers (

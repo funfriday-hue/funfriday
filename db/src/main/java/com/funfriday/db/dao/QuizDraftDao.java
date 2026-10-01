@@ -8,7 +8,11 @@ import java.sql.*;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Admin review storage backed by the standard quiz tables. A draft is simply a
@@ -25,22 +29,30 @@ public class QuizDraftDao {
                             String model, LocalDate lastSyncedAt, List<QuizDraftAnswerRecord> answers) throws SQLException {
         try (Connection connection = connectionProvider.getConnection()) {
             connection.setAutoCommit(false);
-            try (PreparedStatement statement = connection.prepareStatement("""
-                    INSERT INTO quiz_questions(question_key, category, question_type, prompt, last_synced_at, is_active)
-                    VALUES (?, ?, ?, ?, ?, FALSE)
-                    """, Statement.RETURN_GENERATED_KEYS)) {
-                statement.setString(1, questionKey);
-                statement.setString(2, category);
-                statement.setString(3, questionType);
-                statement.setString(4, prompt);
-                statement.setObject(5, lastSyncedAt);
-                statement.executeUpdate();
-                try (ResultSet keys = statement.getGeneratedKeys()) {
-                    if (!keys.next()) throw new SQLException("Draft question id was not generated.");
-                    long questionId = keys.getLong(1);
-                    insertAnswers(connection, questionId, answers);
-                    connection.commit();
-                    return questionId;
+            try {
+                SimilarQuestion similarQuestion = findBestSimilarQuestion(connection, category, questionType, prompt);
+                try (PreparedStatement statement = connection.prepareStatement("""
+                        INSERT INTO quiz_questions(question_key, category, question_type, prompt, last_synced_at,
+                                                   similar_question_id, similarity_score, is_active)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, FALSE)
+                        """, Statement.RETURN_GENERATED_KEYS)) {
+                    statement.setString(1, questionKey);
+                    statement.setString(2, category);
+                    statement.setString(3, questionType);
+                    statement.setString(4, prompt);
+                    statement.setObject(5, lastSyncedAt);
+                    if (similarQuestion == null) statement.setNull(6, Types.BIGINT);
+                    else statement.setLong(6, similarQuestion.id());
+                    if (similarQuestion == null) statement.setNull(7, Types.DECIMAL);
+                    else statement.setDouble(7, similarQuestion.score());
+                    statement.executeUpdate();
+                    try (ResultSet keys = statement.getGeneratedKeys()) {
+                        if (!keys.next()) throw new SQLException("Draft question id was not generated.");
+                        long questionId = keys.getLong(1);
+                        insertAnswers(connection, questionId, answers);
+                        connection.commit();
+                        return questionId;
+                    }
                 }
             } catch (SQLException exception) {
                 connection.rollback();
@@ -57,41 +69,46 @@ public class QuizDraftDao {
         return listQuestions(true, "ACTIVE");
     }
 
-    public List<String> randomPrompts(String category, int limit) throws SQLException {
-        List<String> prompts = new ArrayList<>();
+    public List<String> randomQuestionReferences(String category, int limit) throws SQLException {
+        List<String> references = new ArrayList<>();
         try (Connection connection = connectionProvider.getConnection();
              PreparedStatement statement = connection.prepareStatement("""
-                    SELECT prompt FROM quiz_questions
+                    SELECT id, question_key, prompt FROM quiz_questions
                     WHERE category = ?
                     ORDER BY RAND() LIMIT ?
                     """)) {
             statement.setString(1, category);
             statement.setInt(2, limit);
             try (ResultSet resultSet = statement.executeQuery()) {
-                while (resultSet.next()) prompts.add(resultSet.getString("prompt"));
+                while (resultSet.next()) {
+                    references.add(formatQuestionReference(connection, resultSet.getLong("id"),
+                            resultSet.getString("question_key"), resultSet.getString("prompt"), null));
+                }
             }
         }
-        return prompts;
+        return references;
     }
 
     /** Random examples from other categories, labelled so an LLM can use their format without changing topic. */
-    public List<String> randomPromptsOutsideCategory(String category, int limit) throws SQLException {
-        List<String> prompts = new ArrayList<>();
+    public List<String> randomQuestionReferencesOutsideCategory(String category, int limit) throws SQLException {
+        List<String> references = new ArrayList<>();
         try (Connection connection = connectionProvider.getConnection();
              PreparedStatement statement = connection.prepareStatement("""
-                    SELECT category, prompt FROM quiz_questions
+                    SELECT id, question_key, category, prompt FROM quiz_questions
                     WHERE category <> ?
                     ORDER BY RAND() LIMIT ?
                     """)) {
             statement.setString(1, category);
-            statement.setInt(2, limit);
-            try (ResultSet resultSet = statement.executeQuery()) {
+                statement.setInt(2, limit);
+                try (ResultSet resultSet = statement.executeQuery()) {
                 while (resultSet.next()) {
-                    prompts.add("[" + resultSet.getString("category") + "] " + resultSet.getString("prompt"));
+                    references.add(formatQuestionReference(connection, resultSet.getLong("id"),
+                            resultSet.getString("question_key"), resultSet.getString("prompt"),
+                            resultSet.getString("category")));
                 }
             }
         }
-        return prompts;
+        return references;
     }
 
     /**
@@ -121,17 +138,23 @@ public class QuizDraftDao {
         try (Connection connection = connectionProvider.getConnection()) {
             List<QuizQuestionDraftRow> rows = new ArrayList<>();
             try (PreparedStatement statement = connection.prepareStatement("""
-                    SELECT id, question_key, category, question_type, prompt, last_synced_at, created_at, updated_at
-                    FROM quiz_questions WHERE is_active = ? ORDER BY created_at DESC
+                SELECT qq.id, qq.question_key, qq.category, qq.question_type, qq.prompt, qq.last_synced_at,
+                       qq.created_at, qq.updated_at, sq.question_key AS similar_question_key,
+                       sq.prompt AS similar_question_prompt, qq.similarity_score
+                    FROM quiz_questions qq
+                    LEFT JOIN quiz_questions sq ON sq.id = qq.similar_question_id
+                    WHERE qq.is_active = ? ORDER BY qq.created_at DESC
                     """ );
              ) {
                 statement.setBoolean(1, active);
                 try (ResultSet resultSet = statement.executeQuery()) {
                 while (resultSet.next()) {
-                    rows.add(new QuizQuestionDraftRow(resultSet.getLong("id"), resultSet.getString("question_key"),
+                            rows.add(new QuizQuestionDraftRow(resultSet.getLong("id"), resultSet.getString("question_key"),
                             resultSet.getString("category"), resultSet.getString("question_type"), resultSet.getString("prompt"),
                             resultSet.getObject("last_synced_at", LocalDate.class),
-                            resultSet.getTimestamp("created_at"), resultSet.getTimestamp("updated_at")));
+                            resultSet.getTimestamp("created_at"), resultSet.getTimestamp("updated_at"),
+                            resultSet.getString("similar_question_key"), resultSet.getString("similar_question_prompt"),
+                            resultSet.getObject("similarity_score", Double.class)));
                 }
                 }
             }
@@ -379,10 +402,72 @@ public class QuizDraftDao {
                 .toList();
     }
 
+    private String formatQuestionReference(Connection connection, long questionId, String questionKey, String prompt,
+                                           String category) throws SQLException {
+        List<String> answerDetails = new ArrayList<>();
+        for (QuizDraftAnswerRecord answer : selectAnswers(connection, questionId)) {
+            StringBuilder detail = new StringBuilder(answer.canonicalAnswer());
+            if (answer.hint() != null && !answer.hint().isBlank()) detail.append(" [hint: ").append(answer.hint()).append("]");
+            if (!answer.aliases().isEmpty()) detail.append(" [aliases: ").append(String.join(", ", answer.aliases())).append("]");
+            answerDetails.add(detail.toString());
+        }
+        return (category == null ? "" : "[" + category + "] ") + "Question key: " + questionKey
+                + "\nPrompt: " + prompt + "\nAnswers, hints and aliases: " + String.join(" | ", answerDetails);
+    }
+
+    private SimilarQuestion findBestSimilarQuestion(Connection connection, String category, String questionType,
+                                                     String prompt) throws SQLException {
+        SimilarQuestion best = null;
+        try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT id, question_key, prompt FROM quiz_questions
+                WHERE category = ? AND question_type = ?
+                """)) {
+            statement.setString(1, category);
+            statement.setString(2, questionType);
+            try (ResultSet resultSet = statement.executeQuery()) {
+            while (resultSet.next()) {
+                double score = promptSimilarity(prompt, resultSet.getString("prompt"));
+                if (score >= 0.75 && (best == null || score > best.score())) {
+                    best = new SimilarQuestion(resultSet.getLong("id"), resultSet.getString("question_key"),
+                            resultSet.getString("prompt"), score);
+                }
+            }
+            }
+        }
+        return best;
+    }
+
+    private static double promptSimilarity(String first, String second) {
+        Set<String> firstTokens = significantTokens(first);
+        Set<String> secondTokens = significantTokens(second);
+        if (firstTokens.isEmpty() || secondTokens.isEmpty()) return 0;
+        Set<String> union = new HashSet<>(firstTokens);
+        union.addAll(secondTokens);
+        Set<String> intersection = new HashSet<>(firstTokens);
+        intersection.retainAll(secondTokens);
+        return (double) intersection.size() / union.size();
+    }
+
+    private static Set<String> significantTokens(String prompt) {
+        Set<String> ignored = Set.of("a", "an", "and", "any", "all", "as", "at", "by", "for", "from", "in", "name",
+                "of", "on", "order", "the", "these", "to", "with", "reverse", "chronological", "chronology", "list");
+        Map<String, String> equivalents = Map.of(
+                "champion", "winner", "champions", "winner", "winners", "winner",
+                "movies", "film", "movie", "film", "films", "film",
+                "players", "player", "teams", "team", "states", "state");
+        Set<String> tokens = new HashSet<>();
+        for (String raw : prompt.toLowerCase(Locale.ROOT).split("[^a-z0-9]+")) {
+            if (raw.length() < 3 || ignored.contains(raw)) continue;
+            tokens.add(equivalents.getOrDefault(raw, raw));
+        }
+        return tokens;
+    }
+
     private QuizQuestionDraftRecord readQuestion(Connection connection, QuizQuestionDraftRow row, String status) throws SQLException {
         return new QuizQuestionDraftRecord(row.id(), row.questionKey(), row.category(), row.questionType(), row.prompt(), row.lastSyncedAt(), status, null,
                 row.createdAt().toInstant(), row.updatedAt() == null ? null : row.updatedAt().toInstant(),
-                selectAnswers(connection, row.id()));
+                selectAnswers(connection, row.id()),
+                row.similarQuestionKey(), row.similarQuestionPrompt(), row.similarityScore());
     }
 
     private List<QuizDraftAnswerRecord> selectAnswers(Connection connection, long questionId) throws SQLException {
@@ -417,5 +502,8 @@ public class QuizDraftDao {
     }
 
     private record QuizQuestionDraftRow(long id, String questionKey, String category, String questionType,
-                                        String prompt, LocalDate lastSyncedAt, Timestamp createdAt, Timestamp updatedAt) { }
+                                        String prompt, LocalDate lastSyncedAt, Timestamp createdAt, Timestamp updatedAt,
+                                        String similarQuestionKey, String similarQuestionPrompt, Double similarityScore) { }
+
+    private record SimilarQuestion(long id, String questionKey, String prompt, double score) { }
 }
