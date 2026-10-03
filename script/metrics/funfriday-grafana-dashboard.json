@@ -1,0 +1,173 @@
+{
+  "apiVersion": "dashboard.grafana.app/v1",
+  "kind": "Dashboard",
+  "metadata": {
+    "name": "funfriday-game-metrics"
+  },
+  "spec": {
+  "__inputs": [
+    {
+      "name": "DS_GAMEMETRICS",
+      "label": "GameMetrics MySQL data source",
+      "description": "Select the MySQL data source connected to the GameMetrics database.",
+      "type": "datasource",
+      "pluginId": "mysql",
+      "pluginName": "MySQL"
+    }
+  ],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "12.0.0" },
+    { "type": "datasource", "id": "mysql", "name": "MySQL", "version": "" }
+  ],
+  "title": "FunFriday Game Metrics",
+  "uid": "funfriday-game-metrics",
+  "timezone": "browser",
+  "schemaVersion": 41,
+  "version": 1,
+  "refresh": "5m",
+  "time": { "from": "now-7d", "to": "now" },
+  "tags": ["funfriday", "games", "websocket"],
+  "editable": true,
+  "graphTooltip": 0,
+  "links": [],
+  "preload": false,
+  "annotations": { "list": [] },
+  "timepicker": {},
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "label": "Data source",
+        "query": "mysql",
+        "current": {},
+        "hide": 0
+      },
+      {
+        "name": "game_type",
+        "type": "query",
+        "label": "Game type",
+        "datasource": "$datasource",
+        "definition": "SELECT DISTINCT game_type FROM game_metrics_hourly ORDER BY game_type",
+        "query": "SELECT DISTINCT game_type FROM game_metrics_hourly ORDER BY game_type",
+        "includeAll": true,
+        "allValue": "%",
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Games Started",
+      "datasource": "$datasource",
+      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 5 },
+      "targets": [{ "refId": "A", "format": "time_series", "rawSql": "SELECT UNIX_TIMESTAMP(NOW()) AS time, COALESCE(SUM(games_started), 0) AS value FROM game_metrics_hourly WHERE $__timeFilter(bucket_start) AND game_type LIKE '$game_type'" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none", "justifyMode": "auto" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } }, "overrides": [] }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Games Completed",
+      "datasource": "$datasource",
+      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 5 },
+      "targets": [{ "refId": "A", "format": "time_series", "rawSql": "SELECT UNIX_TIMESTAMP(NOW()) AS time, COALESCE(SUM(games_completed), 0) AS value FROM game_metrics_hourly WHERE $__timeFilter(bucket_start) AND game_type LIKE '$game_type'" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "colorMode": "value", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } }, "overrides": [] }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Completion Rate",
+      "datasource": "$datasource",
+      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 5 },
+      "targets": [{ "refId": "A", "format": "time_series", "rawSql": "SELECT UNIX_TIMESTAMP(NOW()) AS time, COALESCE(100 * SUM(games_completed) / NULLIF(SUM(games_started), 0), 0) AS value FROM game_metrics_hourly WHERE $__timeFilter(bucket_start) AND game_type LIKE '$game_type'" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "colorMode": "value", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "unit": "percent", "decimals": 1, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "orange", "value": 50 }, { "color": "green", "value": 80 }] } }, "overrides": [] }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "WebSocket Connections Opened",
+      "datasource": "$datasource",
+      "gridPos": { "x": 12, "y": 0, "w": 4, "h": 5 },
+      "targets": [{ "refId": "A", "format": "time_series", "rawSql": "SELECT UNIX_TIMESTAMP(NOW()) AS time, COALESCE(SUM(connections_opened), 0) AS value FROM websocket_metrics_hourly WHERE $__timeFilter(bucket_start)" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "colorMode": "value", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Peak Concurrent WebSockets",
+      "datasource": "$datasource",
+      "gridPos": { "x": 16, "y": 0, "w": 4, "h": 5 },
+      "targets": [{ "refId": "A", "format": "time_series", "rawSql": "SELECT UNIX_TIMESTAMP(NOW()) AS time, COALESCE(MAX(peak_concurrent_connections), 0) AS value FROM websocket_metrics_hourly WHERE $__timeFilter(bucket_start)" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "colorMode": "value", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "purple", "value": null }] } }, "overrides": [] }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Hourly Games Started by Type",
+      "datasource": "$datasource",
+      "gridPos": { "x": 0, "y": 5, "w": 10, "h": 8 },
+      "targets": [{ "refId": "A", "format": "time_series", "rawSql": "SELECT bucket_start AS time, SUM(games_started) AS value, game_type AS metric FROM game_metrics_hourly WHERE $__timeFilter(bucket_start) AND game_type LIKE '$game_type' GROUP BY bucket_start, game_type ORDER BY bucket_start" }],
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "lineWidth": 2, "fillOpacity": 12, "showPoints": "auto", "spanNulls": false }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Hourly WebSocket Activity",
+      "datasource": "$datasource",
+      "gridPos": { "x": 10, "y": 5, "w": 10, "h": 8 },
+      "targets": [{ "refId": "A", "format": "time_series", "rawSql": "SELECT bucket_start AS time, connections_opened AS 'Opened', connections_closed AS 'Closed', peak_concurrent_connections AS 'Peak concurrent' FROM websocket_metrics_hourly WHERE $__timeFilter(bucket_start) ORDER BY bucket_start" }],
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "auto", "spanNulls": false } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 8,
+      "type": "barchart",
+      "title": "Games Started by Quiz Royale Category",
+      "datasource": "$datasource",
+      "gridPos": { "x": 0, "y": 13, "w": 10, "h": 8 },
+      "targets": [{ "refId": "A", "format": "table", "rawSql": "SELECT COALESCE(NULLIF(category, ''), 'Other') AS category, SUM(games_started) AS games_started FROM game_metrics_hourly WHERE $__timeFilter(bucket_start) AND game_type = 'QUIZ_ROYALE' GROUP BY category ORDER BY games_started DESC" }],
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisLabel": "Games", "axisPlacement": "auto", "fillOpacity": 80, "lineWidth": 1 } }, "overrides": [] },
+      "options": { "orientation": "auto", "showValue": "always", "stacking": "none", "xTickLabelRotation": 0, "xTickLabelSpacing": 0 }
+    },
+    {
+      "id": 9,
+      "type": "barchart",
+      "title": "Games Started by Play Mode",
+      "datasource": "$datasource",
+      "gridPos": { "x": 10, "y": 13, "w": 10, "h": 8 },
+      "targets": [{ "refId": "A", "format": "table", "rawSql": "SELECT COALESCE(NULLIF(play_mode, ''), 'Other') AS play_mode, SUM(games_started) AS games_started FROM game_metrics_hourly WHERE $__timeFilter(bucket_start) GROUP BY play_mode ORDER BY games_started DESC" }],
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisLabel": "Games", "axisPlacement": "auto", "fillOpacity": 80, "lineWidth": 1 } }, "overrides": [] },
+      "options": { "orientation": "auto", "showValue": "always", "stacking": "none" }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Daily Games Started",
+      "datasource": "$datasource",
+      "gridPos": { "x": 0, "y": 21, "w": 10, "h": 8 },
+      "targets": [{ "refId": "A", "format": "time_series", "rawSql": "SELECT bucket_start AS time, SUM(games_started) AS value, game_type AS metric FROM game_metrics_daily WHERE $__timeFilter(bucket_start) AND game_type LIKE '$game_type' GROUP BY bucket_start, game_type ORDER BY bucket_start" }],
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "bars", "lineWidth": 1, "fillOpacity": 75, "showPoints": "never", "spanNulls": false } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 11,
+      "type": "table",
+      "title": "Game Type Summary",
+      "datasource": "$datasource",
+      "gridPos": { "x": 10, "y": 21, "w": 10, "h": 8 },
+      "targets": [{ "refId": "A", "format": "table", "rawSql": "SELECT game_type AS 'Game type', SUM(games_started) AS 'Started', SUM(games_completed) AS 'Completed', SUM(games_abandoned) AS 'Abandoned', ROUND(SUM(total_players) / NULLIF(SUM(games_completed), 0), 1) AS 'Avg players', ROUND(SUM(total_duration_seconds) / NULLIF(SUM(games_completed), 0), 1) AS 'Avg duration (seconds)' FROM game_metrics_hourly WHERE $__timeFilter(bucket_start) AND game_type LIKE '$game_type' GROUP BY game_type ORDER BY Started DESC" }],
+      "fieldConfig": { "defaults": { "mappings": [], "color": { "mode": "thresholds" } }, "overrides": [] },
+      "options": { "showHeader": true, "cellHeight": "sm" }
+    }
+  ]
+  }
+}
