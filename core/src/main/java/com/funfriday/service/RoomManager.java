@@ -5,6 +5,7 @@ import com.funfriday.games.quizroyale.QuizRoyaleData;
 import com.funfriday.model.GameAction;
 import com.funfriday.model.GameData;
 import com.funfriday.model.GameRoom;
+import com.funfriday.model.GameStatus;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.RemovalCause;
@@ -35,6 +36,7 @@ public class RoomManager {
     // Injected dependencies
     private final GameFactory gameFactory;
     private final TimerGameManager timerManager;
+    private final GameMetricsService gameMetricsService;
 
     private ExecutorService createRoomExecutor(String roomId) {
         ThreadFactory tf = r -> {
@@ -52,6 +54,10 @@ public class RoomManager {
                 .expireAfterAccess(30, TimeUnit.MINUTES)
                 .removalListener((String roomId, GameRoom room, RemovalCause cause) -> {
                     if (roomId == null) return;
+
+                    if (room != null && room.getStatus() == com.funfriday.model.GameStatus.IN_PROGRESS) {
+                        gameMetricsService.recordGameAbandoned(room);
+                    }
 
                     // 1) Cancel scheduled timer for this room (no-op if none)
                     try {
@@ -118,7 +124,11 @@ public class RoomManager {
                     cf.completeExceptionally(new IllegalStateException("Room not found: " + roomId));
                     return;
                 }
+                GameStatus statusBeforeAction = room.getStatus();
                 room.handlePlayerAction(action);
+                if (statusBeforeAction != GameStatus.FINISHED && room.getStatus() == GameStatus.FINISHED) {
+                    gameMetricsService.recordGameCompleted(room);
+                }
                 if (room.getGameData() instanceof QuizRoyaleData) {
                     if (((QuizRoyaleData) room.getGameData()).isQuestionActive()) timerManager.scheduleQuizRoyaleTurnTimer(roomId, room, exec, roomExecutors);
                     else timerManager.scheduleQuizRoyaleQuestionTransition(roomId, room, exec, roomExecutors);
@@ -149,6 +159,7 @@ public class RoomManager {
                 }
 
                 room.startGame(requestingPlayerId, gameMode, props);
+                gameMetricsService.recordGameStarted(room);
 
                 // If TIME_ATTACK or other timed mode, schedule the timer
                 GameData<?> gameData = room.getGameData();
@@ -184,6 +195,7 @@ public class RoomManager {
                 }
                 timerManager.cancelTimer(roomId);
                 room.restartGame(requestingPlayerId);
+                gameMetricsService.recordGameStarted(room);
                 GameData<?> gameData = room.getGameData();
                 if (gameData instanceof QuizRoyaleData) {
                     timerManager.scheduleQuizRoyaleQuestionTransition(roomId, room, exec, roomExecutors);

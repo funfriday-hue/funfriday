@@ -8,6 +8,7 @@ import com.funfriday.request.JoinRequest;
 import com.funfriday.request.StartRequest;
 import com.funfriday.service.RoomManager;
 import com.funfriday.service.RoomViewFactory;
+import com.funfriday.service.GameMetricsService;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageExceptionHandler;
 import org.springframework.messaging.handler.annotation.MessageMapping;
@@ -19,6 +20,7 @@ import org.springframework.messaging.simp.annotation.SendToUser;
 import org.springframework.stereotype.Controller;
 import org.springframework.context.event.EventListener;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
+import org.springframework.web.socket.messaging.SessionConnectEvent;
 
 
 import lombok.RequiredArgsConstructor;
@@ -36,6 +38,7 @@ public class GameWebSocketController {
     private final RoomManager roomService;
     private final SimpMessagingTemplate messagingTemplate;
     private final RoomViewFactory viewFactory;
+    private final GameMetricsService gameMetricsService;
     /**
      * Handles any game-related move (Wordle guess, Quiz answer, etc.)
      * The @Payload GameAction is automatically deserialized into its subclass
@@ -185,6 +188,7 @@ public class GameWebSocketController {
     @EventListener
     public void handleDisconnect(SessionDisconnectEvent event) {
         StompHeaderAccessor accessor = StompHeaderAccessor.wrap(event.getMessage());
+        gameMetricsService.recordWebSocketDisconnected(accessor.getSessionId());
         Map<String, Object> attributes = accessor.getSessionAttributes();
         if (attributes == null) return;
         String roomId = (String) attributes.get("roomId");
@@ -197,6 +201,12 @@ public class GameWebSocketController {
                     log.debug("Unable to mark player {} disconnected in room {}: {}", playerId, roomId, ex.getMessage());
                     return null;
                 });
+    }
+
+    @EventListener
+    public void handleConnect(SessionConnectEvent event) {
+        StompHeaderAccessor accessor = StompHeaderAccessor.wrap(event.getMessage());
+        gameMetricsService.recordWebSocketConnected(accessor.getSessionId());
     }
 
     // Broadcast safe public view to everyone

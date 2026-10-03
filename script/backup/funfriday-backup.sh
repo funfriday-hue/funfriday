@@ -19,6 +19,7 @@ trap 'rm -f "$BACKUP_FILE"' EXIT
 
 mysqldump --defaults-extra-file="$MYSQL_DEFAULTS_FILE" \
   --single-transaction \
+  --no-tablespaces \
   --routines \
   --events \
   --triggers \

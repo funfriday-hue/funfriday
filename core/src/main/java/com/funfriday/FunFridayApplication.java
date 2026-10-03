@@ -3,8 +3,10 @@ package com.funfriday;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.ComponentScan;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
+@EnableScheduling
 // This annotation tells Spring to scan for your Controllers, Services, and Configs
 public class FunFridayApplication {
 
