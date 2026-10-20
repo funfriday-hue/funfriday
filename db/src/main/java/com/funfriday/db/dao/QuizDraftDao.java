@@ -89,6 +89,34 @@ public class QuizDraftDao {
         return references;
     }
 
+    /**
+     * A compact, ordered topic inventory for the generator.  Unlike the full
+     * references above this deliberately excludes answers and aliases, so we
+     * can give the model a broad view of recently used subjects without
+     * making its prompt unnecessarily large.
+     */
+    public List<String> recentQuestionTopicReferences(String category, int limit) throws SQLException {
+        List<String> references = new ArrayList<>();
+        try (Connection connection = connectionProvider.getConnection();
+             PreparedStatement statement = connection.prepareStatement("""
+                    SELECT question_type, prompt
+                    FROM quiz_questions
+                    WHERE category = ?
+                    ORDER BY created_at DESC, id DESC
+                    LIMIT ?
+                    """)) {
+            statement.setString(1, category);
+            statement.setInt(2, limit);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    references.add("[" + resultSet.getString("question_type") + "] "
+                            + resultSet.getString("prompt"));
+                }
+            }
+        }
+        return references;
+    }
+
     /** Random examples from other categories, labelled so an LLM can use their format without changing topic. */
     public List<String> randomQuestionReferencesOutsideCategory(String category, int limit) throws SQLException {
         List<String> references = new ArrayList<>();

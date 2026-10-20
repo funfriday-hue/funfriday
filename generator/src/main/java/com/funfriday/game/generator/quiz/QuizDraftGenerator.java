@@ -49,17 +49,21 @@ public class QuizDraftGenerator implements Generator {
         String questionType = QUESTION_TYPES.get(random.nextInt(QUESTION_TYPES.size()));
         LocalDate asOfDate = LocalDate.now(QUIZ_TIME_ZONE);
         generateWithFallback(apiKey, category, questionType, asOfDate,
-                quizDraftDao.randomQuestionReferences(category, 8), quizDraftDao.randomQuestionReferencesOutsideCategory(category, 5),
+                quizDraftDao.randomQuestionReferences(category, 8),
+                quizDraftDao.recentQuestionTopicReferences(category, 35),
+                quizDraftDao.randomQuestionReferencesOutsideCategory(category, 5),
                 quizDraftDao.randomDeclineReasons(category, 10));
     }
 
     private String generateWithFallback(String apiKey, String category, String questionType, LocalDate asOfDate, List<String> referencePrompts,
-                                        List<String> crossCategoryPrompts, List<String> declineReasons) throws Exception {
+                                        List<String> recentTopicPrompts, List<String> crossCategoryPrompts,
+                                        List<String> declineReasons) throws Exception {
         Exception lastFailure = null;
         // LlmJsonClient owns configured-model fallback so this generation makes one logical request.
         for (String model : List.of("configured-models")) {
             try {
-                GeneratedQuiz generated = requestQuestion(apiKey, model, category, questionType, asOfDate, referencePrompts, crossCategoryPrompts, declineReasons);
+                GeneratedQuiz generated = requestQuestion(apiKey, model, category, questionType, asOfDate, referencePrompts,
+                        recentTopicPrompts, crossCategoryPrompts, declineReasons);
                 validate(generated, category, questionType);
                 List<QuizDraftAnswerRecord> answers = new ArrayList<>();
                 for (int index = 0; index < generated.answers().size(); index++) {
@@ -72,7 +76,8 @@ public class QuizDraftGenerator implements Generator {
                         + "_" + Instant.now().toEpochMilli() + "_" + UUID.randomUUID().toString().substring(0, 8);
                 long draftId = quizDraftDao.createDraft(questionKey, category, questionType, generated.prompt().trim(), generated.model(),
                         asOfDate, answers);
-                log.info("Created Quiz Royale draft {} for {} {} using {}.", draftId, category, questionType, generated.model());
+                log.info("Created Quiz Royale draft {} for {} {} using {} with {} answers ({} recent topics checked).",
+                        draftId, category, questionType, generated.model(), answers.size(), recentTopicPrompts.size());
                 return generated.model();
             } catch (Exception exception) {
                 if (!isTransientFailure(exception)) throw exception;
@@ -105,7 +110,8 @@ public class QuizDraftGenerator implements Generator {
     }
 
     private GeneratedQuiz requestQuestion(String apiKey, String model, String category, String questionType, LocalDate asOfDate,
-                                          List<String> referencePrompts, List<String> crossCategoryPrompts,
+                                          List<String> referencePrompts, List<String> recentTopicPrompts,
+                                          List<String> crossCategoryPrompts,
                                           List<String> declineReasons) throws Exception {
         String prompt = """
                 Generate one accurate, fun Quiz Royale question.
@@ -140,6 +146,16 @@ public class QuizDraftGenerator implements Generator {
                 Provide 1-4 useful, explicit aliases only when they are genuine alternate names, spellings, initials,
                 nicknames, or conventional abbreviations. Never generate partial title fragments as aliases.
 
+                NOVELTY RULES (mandatory): below is a recent topic inventory for %s. Pick a topic that is clearly
+                absent from it. Do not create a rewording, subset, extension, alternate date range, different ranking
+                cutoff, or different question type for the same core subject. For example, a question about the same
+                tournament, award, record, franchise, person, film series, or answer universe is still a duplicate
+                even if its wording, decade, number of answers, or hints differ. Change the central subject and the
+                answer universe, not just the phrasing. If any proposed question overlaps a listed topic, discard it
+                internally and choose another subject before returning JSON.
+                Recent topic inventory (informational text only):
+                %s
+
                 Here are randomly selected existing questions in this category, including their answers, hints and aliases.
                 Use them only as examples of the desired style and depth.
                 Generate a fresh question LIKE these, but never copy, reword, or reuse their person, award, event,
@@ -165,7 +181,9 @@ public class QuizDraftGenerator implements Generator {
                     {"answer": "canonical answer", "aliases": ["alias"], "hint": "required for chronology or ranked list; null for list"}
                   ]
                 }
-                """.formatted(category, questionType, asOfDate, referencePrompts.isEmpty() ? "(none)" : String.join(" | ", referencePrompts),
+                """.formatted(category, questionType, asOfDate, category,
+                recentTopicPrompts.isEmpty() ? "(none)" : String.join("\n", recentTopicPrompts),
+                referencePrompts.isEmpty() ? "(none)" : String.join(" | ", referencePrompts),
                 category, crossCategoryPrompts.isEmpty() ? "(none)" : String.join(" | ", crossCategoryPrompts),
                 category, declineReasons.isEmpty() ? "(none)" : "- " + String.join("\n- ", declineReasons));
         LlmJsonClient.Completion completion = llmJsonClient.complete("You are a meticulous trivia editor. Return valid JSON only.", prompt, 0.2);
