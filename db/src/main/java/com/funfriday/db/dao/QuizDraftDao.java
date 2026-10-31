@@ -73,7 +73,7 @@ public class QuizDraftDao {
         List<String> references = new ArrayList<>();
         try (Connection connection = connectionProvider.getConnection();
              PreparedStatement statement = connection.prepareStatement("""
-                    SELECT id, question_key, prompt FROM quiz_questions
+                    SELECT id, question_key, question_type, prompt FROM quiz_questions
                     WHERE category = ?
                     ORDER BY RAND() LIMIT ?
                     """)) {
@@ -82,7 +82,8 @@ public class QuizDraftDao {
             try (ResultSet resultSet = statement.executeQuery()) {
                 while (resultSet.next()) {
                     references.add(formatQuestionReference(connection, resultSet.getLong("id"),
-                            resultSet.getString("question_key"), resultSet.getString("prompt"), null));
+                            resultSet.getString("question_key"), resultSet.getString("prompt"), null,
+                            resultSet.getString("question_type")));
                 }
             }
         }
@@ -122,7 +123,7 @@ public class QuizDraftDao {
         List<String> references = new ArrayList<>();
         try (Connection connection = connectionProvider.getConnection();
              PreparedStatement statement = connection.prepareStatement("""
-                    SELECT id, question_key, category, prompt FROM quiz_questions
+                    SELECT id, question_key, category, question_type, prompt FROM quiz_questions
                     WHERE category <> ?
                     ORDER BY RAND() LIMIT ?
                     """)) {
@@ -132,7 +133,7 @@ public class QuizDraftDao {
                 while (resultSet.next()) {
                     references.add(formatQuestionReference(connection, resultSet.getLong("id"),
                             resultSet.getString("question_key"), resultSet.getString("prompt"),
-                            resultSet.getString("category")));
+                            resultSet.getString("category"), resultSet.getString("question_type")));
                 }
             }
         }
@@ -431,7 +432,7 @@ public class QuizDraftDao {
     }
 
     private String formatQuestionReference(Connection connection, long questionId, String questionKey, String prompt,
-                                           String category) throws SQLException {
+                                           String category, String questionType) throws SQLException {
         List<String> answerDetails = new ArrayList<>();
         for (QuizDraftAnswerRecord answer : selectAnswers(connection, questionId)) {
             StringBuilder detail = new StringBuilder(answer.canonicalAnswer());
@@ -439,7 +440,9 @@ public class QuizDraftDao {
             if (!answer.aliases().isEmpty()) detail.append(" [aliases: ").append(String.join(", ", answer.aliases())).append("]");
             answerDetails.add(detail.toString());
         }
-        return (category == null ? "" : "[" + category + "] ") + "Question key: " + questionKey
+        String labels = (category == null ? "" : "[" + category + "] ")
+                + (questionType == null ? "" : "[" + questionType + "] ");
+        return labels + "Question key: " + questionKey
                 + "\nPrompt: " + prompt + "\nAnswers, hints and aliases: " + String.join(" | ", answerDetails);
     }
 
