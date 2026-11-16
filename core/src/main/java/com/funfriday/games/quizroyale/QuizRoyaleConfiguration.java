@@ -13,4 +13,6 @@ public class QuizRoyaleConfiguration implements GameConfiguration {
     private int strikeLimit;
     private int turnSeconds;
     private int questionCount;
+    /** Optional active question selected from the public category catalogue. */
+    private String selectedQuestionKey;
 }

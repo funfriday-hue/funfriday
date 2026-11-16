@@ -3,6 +3,7 @@ package com.funfriday.db.dao;
 import com.funfriday.db.DatabaseConnectionProvider;
 import com.funfriday.db.model.QuizAnswerRecord;
 import com.funfriday.db.model.QuizQuestionRecord;
+import com.funfriday.db.model.QuizQuestionSummary;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -43,6 +44,49 @@ public class QuizQuestionDao {
 
     public Optional<QuizQuestionRecord> selectRandomActiveByCategory(String category) throws SQLException {
         return selectRandomActiveByCategoryExcluding(category, List.of());
+    }
+
+    public Optional<QuizQuestionRecord> selectActiveByKeyAndCategory(String questionKey, String category) throws SQLException {
+        try (Connection connection = connectionProvider.getConnection();
+             PreparedStatement questionStatement = connection.prepareStatement("""
+                     SELECT id, question_key, category, question_type, prompt, last_synced_at
+                     FROM quiz_questions
+                     WHERE question_key = ? AND category = ? AND is_active = TRUE
+                     LIMIT 1
+                     """)) {
+            questionStatement.setString(1, questionKey);
+            questionStatement.setString(2, category);
+            try (ResultSet resultSet = questionStatement.executeQuery()) {
+                if (!resultSet.next()) return Optional.empty();
+                long questionId = resultSet.getLong("id");
+                return Optional.of(new QuizQuestionRecord(questionId, resultSet.getString("question_key"),
+                        resultSet.getString("category"), resultSet.getString("question_type"), resultSet.getString("prompt"),
+                        resultSet.getObject("last_synced_at", java.time.LocalDate.class), selectAnswers(connection, questionId)));
+            }
+        }
+    }
+
+    public List<QuizQuestionSummary> listActiveSummariesByCategory(String category) throws SQLException {
+        List<QuizQuestionSummary> questions = new ArrayList<>();
+        try (Connection connection = connectionProvider.getConnection();
+             PreparedStatement statement = connection.prepareStatement("""
+                     SELECT question_key, question_type, prompt
+                     FROM quiz_questions
+                     WHERE category = ? AND is_active = TRUE
+                     ORDER BY created_at DESC, id DESC
+                     """)) {
+            statement.setString(1, category);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    questions.add(new QuizQuestionSummary(
+                            resultSet.getString("question_key"),
+                            resultSet.getString("question_type"),
+                            resultSet.getString("prompt")
+                    ));
+                }
+            }
+        }
+        return questions;
     }
 
     public Optional<QuizQuestionRecord> selectRandomActiveByCategoryExcluding(String category, List<String> excludedQuestionKeys) throws SQLException {

@@ -21,7 +21,7 @@ public class QuizRoyaleGame implements GameLogic, GameModeProvider {
     @Override public GameData<?> initializeData(GameConfiguration rawConfiguration) {
         QuizRoyaleConfiguration configuration = (QuizRoyaleConfiguration) rawConfiguration;
         QuizRoyaleData data = new QuizRoyaleData();
-        data.setQuestions(sampleQuestions(configuration.getCategory(), configuration.getQuestionCount()));
+        data.setQuestions(sampleQuestions(configuration));
         data.setQuestionIndex(0);
         data.setQuestion(data.getQuestions().get(0));
         data.setQuestionActive(false);
@@ -303,7 +303,10 @@ public class QuizRoyaleGame implements GameLogic, GameModeProvider {
         } catch (NumberFormatException exception) {
             questionCount = 1;
         }
-        return new QuizRoyaleConfiguration(category, QuizQuestionType.LIST, playMode, Math.max(1, Math.min(5, strikeLimit)), turnSeconds, Math.max(1, Math.min(3, questionCount)));
+        String selectedQuestionKey = String.valueOf(payload.getOrDefault("questionKey", "")).trim();
+        if (selectedQuestionKey.isBlank()) selectedQuestionKey = null;
+        return new QuizRoyaleConfiguration(category, QuizQuestionType.LIST, playMode, Math.max(1, Math.min(5, strikeLimit)), turnSeconds,
+                selectedQuestionKey == null ? Math.max(1, Math.min(3, questionCount)) : 1, selectedQuestionKey);
     }
     @Override public List<GameModeDTO.ModeOption> getAvailableModes() {
         return List.of(
@@ -315,11 +318,18 @@ public class QuizRoyaleGame implements GameLogic, GameModeProvider {
         );
     }
 
-    private List<QuizQuestion> sampleQuestions(QuizCategory category, int questionCount) {
+    private List<QuizQuestion> sampleQuestions(QuizRoyaleConfiguration configuration) {
         try {
+            QuizCategory category = configuration.getCategory();
+            if (configuration.getSelectedQuestionKey() != null) {
+                QuizQuestionRecord record = quizQuestionDao.selectActiveByKeyAndCategory(configuration.getSelectedQuestionKey(), category.name())
+                        .orElseThrow(() -> new IllegalArgumentException("The selected Quiz Royale question is unavailable."));
+                if (record.answers().isEmpty()) throw new IllegalStateException("Quiz Royale question " + record.questionKey() + " has no answers.");
+                return List.of(toQuizQuestion(record));
+            }
             List<QuizQuestion> questions = new ArrayList<>();
             List<String> selectedKeys = new ArrayList<>();
-            for (int index = 0; index < questionCount; index++) {
+            for (int index = 0; index < configuration.getQuestionCount(); index++) {
                 QuizQuestionRecord record = quizQuestionDao.selectRandomActiveByCategoryExcluding(category.name(), selectedKeys)
                         .orElseThrow(() -> new IllegalStateException("There are not enough distinct active " + category.name() + " Quiz Royale questions in MySQL."));
                 if (record.answers().isEmpty()) {
