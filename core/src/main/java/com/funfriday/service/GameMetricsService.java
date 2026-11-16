@@ -89,7 +89,7 @@ public class GameMetricsService {
 
     /** Records the client-observed catalogue request duration without retaining visitor data. */
     public void recordCategoryCatalogueLoad(String category, long durationMilliseconds) {
-        if (category == null || !Set.of("CRICKET", "FOOTBALL", "BOLLYWOOD", "WWE", "INDIA").contains(category)) return;
+        if (category == null || !Set.of("CRICKET", "FOOTBALL", "BOLLYWOOD", "WWE", "INDIA", "CHESS").contains(category)) return;
         long safeDuration = Math.max(0, Math.min(durationMilliseconds, 60_000));
         synchronized (lock) {
             recordPageLoad(pageLoadCounters(pendingHourlyPageLoads, hourlyPageKey(category)), safeDuration);

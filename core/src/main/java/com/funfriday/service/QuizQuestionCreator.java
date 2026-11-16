@@ -17,7 +17,7 @@ import java.util.*;
 @RequiredArgsConstructor
 public class QuizQuestionCreator {
     private static final ZoneId TIME_ZONE = ZoneId.of("Asia/Kolkata");
-    private static final Set<String> CATEGORIES = Set.of("CRICKET", "FOOTBALL", "BOLLYWOOD", "WWE", "INDIA");
+    private static final Set<String> CATEGORIES = Set.of("CRICKET", "FOOTBALL", "BOLLYWOOD", "WWE", "INDIA", "CHESS");
     private static final Set<String> TYPES = Set.of("LIST", "CHRONOLOGY", "RANKED_LIST");
     private final LlmJsonClient llmJsonClient;
     private final QuizDraftDao quizDraftDao;

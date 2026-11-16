@@ -24,7 +24,7 @@ import java.util.Map;
 @CrossOrigin(origins = {"http://localhost:3000", "http://funfriday.co.in", "https://funfriday.co.in"}, allowCredentials = "true")
 @RequiredArgsConstructor
 public class QuizQuestionCatalogController {
-    private static final Set<String> CATEGORIES = Set.of("CRICKET", "FOOTBALL", "BOLLYWOOD", "WWE", "INDIA");
+    private static final Set<String> CATEGORIES = Set.of("CRICKET", "FOOTBALL", "BOLLYWOOD", "WWE", "INDIA", "CHESS");
     private final QuizQuestionDao quizQuestionDao;
     private final PlayerQuestionProgressDao playerQuestionProgressDao;
     private final FunFridayJwtService jwtService;

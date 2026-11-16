@@ -319,7 +319,8 @@ public class QuizRoyaleGame implements GameLogic, GameModeProvider {
                 new GameModeDTO.ModeOption("FOOTBALL", "Football"),
                 new GameModeDTO.ModeOption("BOLLYWOOD", "Bollywood"),
                 new GameModeDTO.ModeOption("WWE", "WWE"),
-                new GameModeDTO.ModeOption("INDIA", "India")
+                new GameModeDTO.ModeOption("INDIA", "India"),
+                new GameModeDTO.ModeOption("CHESS", "Chess")
         );
     }
 

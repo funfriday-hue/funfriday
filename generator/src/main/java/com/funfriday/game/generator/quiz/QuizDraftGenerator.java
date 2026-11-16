@@ -27,10 +27,10 @@ import java.util.*;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-@GeneratorSchedule(interval = "PT2H")
+@GeneratorSchedule(interval = "PT12H")
 public class QuizDraftGenerator implements Generator {
     private static final ZoneId QUIZ_TIME_ZONE = ZoneId.of("Asia/Kolkata");
-    private static final List<String> CATEGORIES = List.of("CRICKET", "FOOTBALL", "BOLLYWOOD", "WWE", "INDIA");
+    private static final List<String> CATEGORIES = List.of("CRICKET", "FOOTBALL", "BOLLYWOOD", "WWE", "INDIA", "CHESS");
     private static final List<String> QUESTION_TYPES = List.of("LIST", "CHRONOLOGY", "RANKED_LIST");
 
     private final QuizDraftDao quizDraftDao;
