@@ -85,13 +85,14 @@ public class PlayerQuestionProgressDao {
                     FROM player_question_progress
                     WHERE player_id = ?
                     ON DUPLICATE KEY UPDATE
-                        best_correct_answers = GREATEST(best_correct_answers, VALUES(best_correct_answers)),
-                        answer_count = GREATEST(answer_count, VALUES(answer_count)),
-                        is_completed = is_completed OR VALUES(is_completed),
-                        first_played_at = LEAST(first_played_at, VALUES(first_played_at)),
-                        last_played_at = GREATEST(last_played_at, VALUES(last_played_at)),
+                        best_correct_answers = GREATEST(player_question_progress.best_correct_answers, VALUES(best_correct_answers)),
+                        answer_count = GREATEST(player_question_progress.answer_count, VALUES(answer_count)),
+                        is_completed = player_question_progress.is_completed OR VALUES(is_completed),
+                        first_played_at = LEAST(player_question_progress.first_played_at, VALUES(first_played_at)),
+                        last_played_at = GREATEST(player_question_progress.last_played_at, VALUES(last_played_at)),
                         completed_at = CASE
-                            WHEN is_completed OR VALUES(is_completed) THEN COALESCE(completed_at, VALUES(completed_at), CURRENT_TIMESTAMP)
+                            WHEN player_question_progress.is_completed OR VALUES(is_completed)
+                                THEN COALESCE(player_question_progress.completed_at, VALUES(completed_at), CURRENT_TIMESTAMP)
                             ELSE NULL
                         END
                     """)) {
