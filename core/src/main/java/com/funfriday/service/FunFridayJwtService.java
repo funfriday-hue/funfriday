@@ -73,7 +73,7 @@ public class FunFridayJwtService {
             String playerId = (String) claims.get("pid");
             String name = (String) claims.get("name");
             if (subject == null || playerId == null || name == null || !playerId.equals(playerIdFor(subject))) return Optional.empty();
-            return Optional.of(new PlayerPrincipal(playerId, name, (String) claims.getOrDefault("picture", "")));
+            return Optional.of(new PlayerPrincipal(playerId, firstName(name), (String) claims.getOrDefault("picture", "")));
         } catch (Exception ignored) {
             return Optional.empty();
         }
@@ -110,5 +110,10 @@ public class FunFridayJwtService {
 
     private static String encode(byte[] value) { return Base64.getUrlEncoder().withoutPadding().encodeToString(value); }
     private static byte[] decode(String value) { return Base64.getUrlDecoder().decode(value); }
+    private static String firstName(String fullName) {
+        String normalized = fullName.trim();
+        int separator = normalized.indexOf(' ');
+        return separator < 0 ? normalized : normalized.substring(0, separator);
+    }
     public record PlayerPrincipal(String playerId, String name, String pictureUrl) { }
 }

@@ -76,5 +76,22 @@ public class AuthController {
                 .orElseGet(() -> ResponseEntity.ok(Map.of("signedIn", false)));
     }
 
+    @PostMapping("/logout")
+    public ResponseEntity<?> logout(HttpServletRequest request, HttpServletResponse response) {
+        boolean secure = request.isSecure() || "https".equalsIgnoreCase(request.getHeader("X-Forwarded-Proto"));
+        clearCookie(response, FunFridayJwtService.SESSION_COOKIE, true, secure);
+        clearCookie(response, "playerId", false, secure);
+        return ResponseEntity.ok(Map.of("signedIn", false));
+    }
+
+    private void clearCookie(HttpServletResponse response, String name, boolean httpOnly, boolean secure) {
+        Cookie cookie = new Cookie(name, "");
+        cookie.setPath("/");
+        cookie.setHttpOnly(httpOnly);
+        cookie.setSecure(secure);
+        cookie.setMaxAge(0);
+        response.addCookie(cookie);
+    }
+
     public record GoogleCredentialRequest(String credential) { }
 }

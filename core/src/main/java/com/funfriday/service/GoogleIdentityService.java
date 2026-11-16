@@ -28,14 +28,22 @@ public class GoogleIdentityService {
         GoogleIdToken.Payload payload = token.getPayload();
         String subject = payload.getSubject();
         String name = (String) payload.get("name");
+        String givenName = (String) payload.get("given_name");
         String email = payload.getEmail();
         String picture = (String) payload.get("picture");
         if (subject == null || subject.isBlank() || name == null || name.isBlank()) return Optional.empty();
-        return Optional.of(new GoogleProfile(subject, name.trim(), email, picture));
+        String displayName = givenName == null || givenName.isBlank() ? firstName(name) : givenName.trim();
+        return Optional.of(new GoogleProfile(subject, displayName, email, picture));
     }
 
     public String clientId() {
         return clientId == null ? "" : clientId;
+    }
+
+    private static String firstName(String fullName) {
+        String normalized = fullName.trim();
+        int separator = normalized.indexOf(' ');
+        return separator < 0 ? normalized : normalized.substring(0, separator);
     }
 
     public record GoogleProfile(String subject, String name, String email, String pictureUrl) { }
