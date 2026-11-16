@@ -1,0 +1,42 @@
+package com.funfriday.service;
+
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
+import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
+import com.google.api.client.json.gson.GsonFactory;
+import org.springframework.stereotype.Service;
+
+import java.security.GeneralSecurityException;
+import java.util.Collections;
+import java.util.Optional;
+
+/** Validates Google Identity Services tokens before any account data is trusted. */
+@Service
+public class GoogleIdentityService {
+    private final String clientId = System.getenv("GOOGLE_CLIENT_ID");
+
+    public Optional<GoogleProfile> verify(String credential) throws GeneralSecurityException, java.io.IOException {
+        if (clientId == null || clientId.isBlank() || credential == null || credential.isBlank()) return Optional.empty();
+
+        GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(
+                GoogleNetHttpTransport.newTrustedTransport(), GsonFactory.getDefaultInstance())
+                .setAudience(Collections.singletonList(clientId))
+                .build();
+        GoogleIdToken token = verifier.verify(credential);
+        if (token == null) return Optional.empty();
+
+        GoogleIdToken.Payload payload = token.getPayload();
+        String subject = payload.getSubject();
+        String name = (String) payload.get("name");
+        String email = payload.getEmail();
+        String picture = (String) payload.get("picture");
+        if (subject == null || subject.isBlank() || name == null || name.isBlank()) return Optional.empty();
+        return Optional.of(new GoogleProfile(subject, name.trim(), email, picture));
+    }
+
+    public String clientId() {
+        return clientId == null ? "" : clientId;
+    }
+
+    public record GoogleProfile(String subject, String name, String email, String pictureUrl) { }
+}

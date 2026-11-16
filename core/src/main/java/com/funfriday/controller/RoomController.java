@@ -5,8 +5,10 @@ import com.funfriday.model.GameRoom;
 import com.funfriday.request.CreateRoomRequest;
 import com.funfriday.request.JoinRequest;
 import com.funfriday.service.RoomManager;
+import com.funfriday.service.FunFridayJwtService;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -22,11 +24,13 @@ import java.util.Map;
 public class RoomController {
 
     private final RoomManager roomManager;
+    private final FunFridayJwtService jwtService;
 
     @PostMapping("/create")
     public ResponseEntity<GameRoom> createRoom(
             @CookieValue(name = "playerId", required = false) String playerId,
             @RequestBody CreateRoomRequest request,
+            HttpServletRequest httpRequest,
             HttpServletResponse response) {
 
         // Validation check
@@ -34,13 +38,16 @@ public class RoomController {
             return ResponseEntity.badRequest().build();
         }
 
-        GameRoom room = roomManager.createRoom(request.getType(), playerId, request.getHost(), request.getGameMode());
+        FunFridayJwtService.PlayerPrincipal authenticated = jwtService.currentUser(httpRequest).orElse(null);
+        String effectivePlayerId = authenticated == null ? playerId : authenticated.playerId();
+        String effectiveName = authenticated == null ? request.getHost() : authenticated.name();
+        GameRoom room = roomManager.createRoom(request.getType(), effectivePlayerId, effectiveName, request.getGameMode());
 
         // 3. Attach Cookie to Response
         Cookie cookie = new Cookie("playerId", room.getHost().getId());
         cookie.setHttpOnly(false);
         cookie.setPath("/");
-        cookie.setMaxAge(86400);  // 24 hours
+        cookie.setMaxAge(60 * 60 * 24 * 365);
         response.addCookie(cookie);
 
 
@@ -52,6 +59,7 @@ public class RoomController {
             @PathVariable(name = "roomId") String roomId,
             @CookieValue(name = "playerId", required = false) String playerId,
             @RequestBody JoinRequest request,
+            HttpServletRequest httpRequest,
             HttpServletResponse response) {
 
         // 1. Check if room exists
@@ -60,13 +68,16 @@ public class RoomController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Room not found");
         }
 
-        GamePlayer player = room.addPlayer(playerId, request.getPlayerName(), false);
+        FunFridayJwtService.PlayerPrincipal authenticated = jwtService.currentUser(httpRequest).orElse(null);
+        String effectivePlayerId = authenticated == null ? playerId : authenticated.playerId();
+        String effectiveName = authenticated == null ? request.getPlayerName() : authenticated.name();
+        GamePlayer player = room.addPlayer(effectivePlayerId, effectiveName, false);
 
         // 3. Attach Cookie to Response
         Cookie cookie = new Cookie("playerId", player.getId());
         cookie.setHttpOnly(false);
         cookie.setPath("/");
-        cookie.setMaxAge(86400);  // 24 hours
+        cookie.setMaxAge(60 * 60 * 24 * 365);
         response.addCookie(cookie);
 
         // 4. Return success

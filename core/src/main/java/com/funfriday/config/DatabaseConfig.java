@@ -61,4 +61,5 @@ public class DatabaseConfig {
     public GameMetricsDao gameMetricsDao(@Qualifier("gameMetricsDatabaseConnectionProvider") DatabaseConnectionProvider databaseConnectionProvider) {
         return new GameMetricsDao(databaseConnectionProvider);
     }
+
 }
