@@ -167,6 +167,39 @@
       "targets": [{ "refId": "A", "format": "table", "rawSql": "SELECT game_type AS 'Game type', SUM(games_started) AS 'Started', SUM(games_completed) AS 'Completed', SUM(games_abandoned) AS 'Abandoned', ROUND(SUM(total_players) / NULLIF(SUM(games_completed), 0), 1) AS 'Avg players', ROUND(SUM(total_duration_seconds) / NULLIF(SUM(games_completed), 0), 1) AS 'Avg duration (seconds)' FROM game_metrics_hourly WHERE $__timeFilter(bucket_start) AND game_type LIKE '$game_type' GROUP BY game_type ORDER BY Started DESC" }],
       "fieldConfig": { "defaults": { "mappings": [], "color": { "mode": "thresholds" } }, "overrides": [] },
       "options": { "showHeader": true, "cellHeight": "sm" }
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "Average Category Catalogue Load",
+      "datasource": "$datasource",
+      "gridPos": { "x": 0, "y": 29, "w": 5, "h": 5 },
+      "targets": [{ "refId": "A", "format": "time_series", "rawSql": "SELECT UNIX_TIMESTAMP(NOW()) AS time, COALESCE(ROUND(SUM(total_load_milliseconds) / NULLIF(SUM(load_count), 0)), 0) AS value FROM page_load_metrics_hourly WHERE $__timeFilter(bucket_start)" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "colorMode": "value", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "unit": "ms", "decimals": 0, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 2000 }, { "color": "orange", "value": 3000 }, { "color": "red", "value": 4000 }] } }, "overrides": [] }
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "Category Loads Over 3 Seconds",
+      "datasource": "$datasource",
+      "gridPos": { "x": 5, "y": 29, "w": 5, "h": 5 },
+      "targets": [{ "refId": "A", "format": "time_series", "rawSql": "SELECT UNIX_TIMESTAMP(NOW()) AS time, COALESCE(100 * SUM(loads_over_three_seconds) / NULLIF(SUM(load_count), 0), 0) AS value FROM page_load_metrics_hourly WHERE $__timeFilter(bucket_start)" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "colorMode": "value", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "unit": "percent", "decimals": 1, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 5 }, { "color": "orange", "value": 15 }, { "color": "red", "value": 30 }] } }, "overrides": [] }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Hourly Category Catalogue Load Time",
+      "datasource": "$datasource",
+      "gridPos": { "x": 10, "y": 29, "w": 10, "h": 8 },
+      "targets": [
+        { "refId": "A", "format": "time_series", "rawSql": "SELECT bucket_start AS time, ROUND(total_load_milliseconds / NULLIF(load_count, 0)) AS value, CONCAT(page_name, ' average') AS metric FROM page_load_metrics_hourly WHERE $__timeFilter(bucket_start) ORDER BY bucket_start" },
+        { "refId": "B", "format": "time_series", "rawSql": "SELECT bucket_start AS time, max_load_milliseconds AS value, CONCAT(page_name, ' max') AS metric FROM page_load_metrics_hourly WHERE $__timeFilter(bucket_start) ORDER BY bucket_start" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms", "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "auto", "spanNulls": false }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 3000 }, { "color": "red", "value": 4000 }] } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } }
     }
   ]
   }

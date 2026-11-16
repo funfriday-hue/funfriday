@@ -2,6 +2,7 @@ package com.funfriday.db.dao;
 
 import com.funfriday.db.DatabaseConnectionProvider;
 import com.funfriday.db.model.GameMetricBucketRecord;
+import com.funfriday.db.model.PageLoadMetricBucketRecord;
 import com.funfriday.db.model.WebSocketMetricBucketRecord;
 
 import java.sql.Connection;
@@ -16,6 +17,8 @@ public class GameMetricsDao {
     private static final String GAME_DAILY_UPSERT = gameUpsert("game_metrics_daily");
     private static final String WEBSOCKET_HOURLY_UPSERT = webSocketUpsert("websocket_metrics_hourly");
     private static final String WEBSOCKET_DAILY_UPSERT = webSocketUpsert("websocket_metrics_daily");
+    private static final String PAGE_LOAD_HOURLY_UPSERT = pageLoadUpsert("page_load_metrics_hourly");
+    private static final String PAGE_LOAD_DAILY_UPSERT = pageLoadUpsert("page_load_metrics_daily");
 
     private final DatabaseConnectionProvider connectionProvider;
 
@@ -27,9 +30,12 @@ public class GameMetricsDao {
             List<GameMetricBucketRecord> hourlyGames,
             List<GameMetricBucketRecord> dailyGames,
             List<WebSocketMetricBucketRecord> hourlyWebSockets,
-            List<WebSocketMetricBucketRecord> dailyWebSockets
+            List<WebSocketMetricBucketRecord> dailyWebSockets,
+            List<PageLoadMetricBucketRecord> hourlyPageLoads,
+            List<PageLoadMetricBucketRecord> dailyPageLoads
     ) throws SQLException {
-        if (hourlyGames.isEmpty() && dailyGames.isEmpty() && hourlyWebSockets.isEmpty() && dailyWebSockets.isEmpty()) return;
+        if (hourlyGames.isEmpty() && dailyGames.isEmpty() && hourlyWebSockets.isEmpty() && dailyWebSockets.isEmpty()
+                && hourlyPageLoads.isEmpty() && dailyPageLoads.isEmpty()) return;
 
         try (Connection connection = connectionProvider.getConnection()) {
             connection.setAutoCommit(false);
@@ -38,6 +44,8 @@ public class GameMetricsDao {
                 upsertGames(connection, GAME_DAILY_UPSERT, dailyGames);
                 upsertWebSockets(connection, WEBSOCKET_HOURLY_UPSERT, hourlyWebSockets);
                 upsertWebSockets(connection, WEBSOCKET_DAILY_UPSERT, dailyWebSockets);
+                upsertPageLoads(connection, PAGE_LOAD_HOURLY_UPSERT, hourlyPageLoads);
+                upsertPageLoads(connection, PAGE_LOAD_DAILY_UPSERT, dailyPageLoads);
                 connection.commit();
             } catch (SQLException exception) {
                 connection.rollback();
@@ -79,6 +87,23 @@ public class GameMetricsDao {
         }
     }
 
+    private static void upsertPageLoads(Connection connection, String sql, List<PageLoadMetricBucketRecord> records) throws SQLException {
+        if (records.isEmpty()) return;
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            for (PageLoadMetricBucketRecord record : records) {
+                statement.setTimestamp(1, Timestamp.valueOf(record.bucketStart()));
+                statement.setString(2, record.pageName());
+                statement.setLong(3, record.loadCount());
+                statement.setLong(4, record.totalLoadMilliseconds());
+                statement.setLong(5, record.maxLoadMilliseconds());
+                statement.setLong(6, record.loadsOverThreeSeconds());
+                statement.setLong(7, record.loadsOverFourSeconds());
+                statement.addBatch();
+            }
+            statement.executeBatch();
+        }
+    }
+
     private static String gameUpsert(String table) {
         return "INSERT INTO " + table + " (bucket_start, game_type, category, play_mode, games_started, games_completed, games_abandoned, total_players, total_duration_seconds) "
                 + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
@@ -97,5 +122,16 @@ public class GameMetricsDao {
                 + "connections_opened = connections_opened + VALUES(connections_opened), "
                 + "connections_closed = connections_closed + VALUES(connections_closed), "
                 + "peak_concurrent_connections = GREATEST(peak_concurrent_connections, VALUES(peak_concurrent_connections))";
+    }
+
+    private static String pageLoadUpsert(String table) {
+        return "INSERT INTO " + table + " (bucket_start, page_name, load_count, total_load_milliseconds, max_load_milliseconds, loads_over_three_seconds, loads_over_four_seconds) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?) "
+                + "ON DUPLICATE KEY UPDATE "
+                + "load_count = load_count + VALUES(load_count), "
+                + "total_load_milliseconds = total_load_milliseconds + VALUES(total_load_milliseconds), "
+                + "max_load_milliseconds = GREATEST(max_load_milliseconds, VALUES(max_load_milliseconds)), "
+                + "loads_over_three_seconds = loads_over_three_seconds + VALUES(loads_over_three_seconds), "
+                + "loads_over_four_seconds = loads_over_four_seconds + VALUES(loads_over_four_seconds)";
     }
 }

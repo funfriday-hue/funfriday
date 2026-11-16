@@ -2,6 +2,7 @@ package com.funfriday.service;
 
 import com.funfriday.db.dao.GameMetricsDao;
 import com.funfriday.db.model.GameMetricBucketRecord;
+import com.funfriday.db.model.PageLoadMetricBucketRecord;
 import com.funfriday.db.model.WebSocketMetricBucketRecord;
 import com.funfriday.games.quizroyale.QuizRoyaleConfiguration;
 import com.funfriday.games.quizroyale.QuizRoyaleData;
@@ -35,6 +36,8 @@ public class GameMetricsService {
     private final Map<GameBucketKey, GameCounters> pendingDailyGames = new HashMap<>();
     private final Map<LocalDateTime, WebSocketCounters> pendingHourlyWebSockets = new HashMap<>();
     private final Map<LocalDateTime, WebSocketCounters> pendingDailyWebSockets = new HashMap<>();
+    private final Map<PageBucketKey, PageLoadCounters> pendingHourlyPageLoads = new HashMap<>();
+    private final Map<PageBucketKey, PageLoadCounters> pendingDailyPageLoads = new HashMap<>();
     private final Set<String> connectedWebSocketSessions = new HashSet<>();
     private long currentWebSocketConnections;
 
@@ -84,6 +87,16 @@ public class GameMetricsService {
         }
     }
 
+    /** Records the client-observed catalogue request duration without retaining visitor data. */
+    public void recordCategoryCatalogueLoad(String category, long durationMilliseconds) {
+        if (category == null || !Set.of("CRICKET", "FOOTBALL", "BOLLYWOOD", "WWE", "INDIA").contains(category)) return;
+        long safeDuration = Math.max(0, Math.min(durationMilliseconds, 60_000));
+        synchronized (lock) {
+            recordPageLoad(pageLoadCounters(pendingHourlyPageLoads, hourlyPageKey(category)), safeDuration);
+            recordPageLoad(pageLoadCounters(pendingDailyPageLoads, dailyPageKey(category)), safeDuration);
+        }
+    }
+
     /** Flushes asynchronously every 30 minutes; change the environment property only if needed. */
     @Scheduled(fixedDelayString = "${FUNFRIDAY_METRICS_FLUSH_MILLIS:1800000}")
     public void flushScheduledMetrics() {
@@ -99,9 +112,10 @@ public class GameMetricsService {
         PendingMetrics pending = drain();
         if (pending.isEmpty()) return;
         try {
-            gameMetricsDao.persist(pending.hourlyGames(), pending.dailyGames(), pending.hourlyWebSockets(), pending.dailyWebSockets());
-            log.info("Flushed game metrics: {} hourly game buckets, {} daily game buckets, {} hourly WebSocket buckets, {} daily WebSocket buckets",
-                    pending.hourlyGames().size(), pending.dailyGames().size(), pending.hourlyWebSockets().size(), pending.dailyWebSockets().size());
+            gameMetricsDao.persist(pending.hourlyGames(), pending.dailyGames(), pending.hourlyWebSockets(), pending.dailyWebSockets(), pending.hourlyPageLoads(), pending.dailyPageLoads());
+            log.info("Flushed game metrics: {} hourly game buckets, {} daily game buckets, {} hourly WebSocket buckets, {} daily WebSocket buckets, {} hourly page-load buckets, {} daily page-load buckets",
+                    pending.hourlyGames().size(), pending.dailyGames().size(), pending.hourlyWebSockets().size(), pending.dailyWebSockets().size(),
+                    pending.hourlyPageLoads().size(), pending.dailyPageLoads().size());
         } catch (Exception exception) {
             mergeBack(pending);
             log.error("Unable to persist buffered game metrics; they will be retried during the next flush", exception);
@@ -114,12 +128,16 @@ public class GameMetricsService {
                     toGameRecords(pendingHourlyGames),
                     toGameRecords(pendingDailyGames),
                     toWebSocketRecords(pendingHourlyWebSockets),
-                    toWebSocketRecords(pendingDailyWebSockets)
+                    toWebSocketRecords(pendingDailyWebSockets),
+                    toPageLoadRecords(pendingHourlyPageLoads),
+                    toPageLoadRecords(pendingDailyPageLoads)
             );
             pendingHourlyGames.clear();
             pendingDailyGames.clear();
             pendingHourlyWebSockets.clear();
             pendingDailyWebSockets.clear();
+            pendingHourlyPageLoads.clear();
+            pendingDailyPageLoads.clear();
             return pending;
         }
     }
@@ -130,6 +148,8 @@ public class GameMetricsService {
             mergeGameRecords(pendingDailyGames, pending.dailyGames());
             mergeWebSocketRecords(pendingHourlyWebSockets, pending.hourlyWebSockets());
             mergeWebSocketRecords(pendingDailyWebSockets, pending.dailyWebSockets());
+            mergePageLoadRecords(pendingHourlyPageLoads, pending.hourlyPageLoads());
+            mergePageLoadRecords(pendingDailyPageLoads, pending.dailyPageLoads());
         }
     }
 
@@ -161,6 +181,26 @@ public class GameMetricsService {
         return pendingDailyWebSockets.computeIfAbsent(LocalDateTime.now().toLocalDate().atStartOfDay(), ignored -> new WebSocketCounters());
     }
 
+    private PageBucketKey hourlyPageKey(String category) {
+        return new PageBucketKey(LocalDateTime.now().truncatedTo(ChronoUnit.HOURS), category + "-quiz");
+    }
+
+    private PageBucketKey dailyPageKey(String category) {
+        return new PageBucketKey(LocalDateTime.now().toLocalDate().atStartOfDay(), category + "-quiz");
+    }
+
+    private static PageLoadCounters pageLoadCounters(Map<PageBucketKey, PageLoadCounters> counters, PageBucketKey key) {
+        return counters.computeIfAbsent(key, ignored -> new PageLoadCounters());
+    }
+
+    private static void recordPageLoad(PageLoadCounters counters, long durationMilliseconds) {
+        counters.loadCount++;
+        counters.totalLoadMilliseconds += durationMilliseconds;
+        counters.maxLoadMilliseconds = Math.max(counters.maxLoadMilliseconds, durationMilliseconds);
+        if (durationMilliseconds > 3_000) counters.loadsOverThreeSeconds++;
+        if (durationMilliseconds > 4_000) counters.loadsOverFourSeconds++;
+    }
+
     private void incrementWebSocketOpened(WebSocketCounters counters) {
         counters.connectionsOpened++;
         counters.peakConcurrentConnections = Math.max(counters.peakConcurrentConnections, currentWebSocketConnections);
@@ -190,6 +230,13 @@ public class GameMetricsService {
         return records;
     }
 
+    private static List<PageLoadMetricBucketRecord> toPageLoadRecords(Map<PageBucketKey, PageLoadCounters> counters) {
+        List<PageLoadMetricBucketRecord> records = new ArrayList<>();
+        counters.forEach((key, value) -> records.add(new PageLoadMetricBucketRecord(key.bucketStart(), key.pageName(), value.loadCount,
+                value.totalLoadMilliseconds, value.maxLoadMilliseconds, value.loadsOverThreeSeconds, value.loadsOverFourSeconds)));
+        return records;
+    }
+
     private static void mergeGameRecords(Map<GameBucketKey, GameCounters> target, List<GameMetricBucketRecord> records) {
         for (GameMetricBucketRecord record : records) {
             GameCounters counters = gameCounters(target, new GameBucketKey(record.bucketStart(), record.gameType(), record.category(), record.playMode()));
@@ -210,12 +257,26 @@ public class GameMetricsService {
         }
     }
 
+    private static void mergePageLoadRecords(Map<PageBucketKey, PageLoadCounters> target, List<PageLoadMetricBucketRecord> records) {
+        for (PageLoadMetricBucketRecord record : records) {
+            PageLoadCounters counters = pageLoadCounters(target, new PageBucketKey(record.bucketStart(), record.pageName()));
+            counters.loadCount += record.loadCount();
+            counters.totalLoadMilliseconds += record.totalLoadMilliseconds();
+            counters.maxLoadMilliseconds = Math.max(counters.maxLoadMilliseconds, record.maxLoadMilliseconds());
+            counters.loadsOverThreeSeconds += record.loadsOverThreeSeconds();
+            counters.loadsOverFourSeconds += record.loadsOverFourSeconds();
+        }
+    }
+
     private record GameDescriptor(String gameType, String category, String playMode) { }
     private record GameBucketKey(LocalDateTime bucketStart, String gameType, String category, String playMode) { }
+    private record PageBucketKey(LocalDateTime bucketStart, String pageName) { }
     private record PendingMetrics(List<GameMetricBucketRecord> hourlyGames, List<GameMetricBucketRecord> dailyGames,
-                                  List<WebSocketMetricBucketRecord> hourlyWebSockets, List<WebSocketMetricBucketRecord> dailyWebSockets) {
+                                  List<WebSocketMetricBucketRecord> hourlyWebSockets, List<WebSocketMetricBucketRecord> dailyWebSockets,
+                                  List<PageLoadMetricBucketRecord> hourlyPageLoads, List<PageLoadMetricBucketRecord> dailyPageLoads) {
         boolean isEmpty() {
-            return hourlyGames.isEmpty() && dailyGames.isEmpty() && hourlyWebSockets.isEmpty() && dailyWebSockets.isEmpty();
+            return hourlyGames.isEmpty() && dailyGames.isEmpty() && hourlyWebSockets.isEmpty() && dailyWebSockets.isEmpty()
+                    && hourlyPageLoads.isEmpty() && dailyPageLoads.isEmpty();
         }
     }
     private static final class GameCounters {
@@ -229,5 +290,12 @@ public class GameMetricsService {
         private long connectionsOpened;
         private long connectionsClosed;
         private long peakConcurrentConnections;
+    }
+    private static final class PageLoadCounters {
+        private long loadCount;
+        private long totalLoadMilliseconds;
+        private long maxLoadMilliseconds;
+        private long loadsOverThreeSeconds;
+        private long loadsOverFourSeconds;
     }
 }
