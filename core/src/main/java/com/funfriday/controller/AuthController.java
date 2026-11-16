@@ -7,6 +7,7 @@ import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,6 +20,7 @@ import java.util.Map;
 import java.util.Optional;
 
 @RestController
+@Slf4j
 @RequestMapping("/api/auth")
 @CrossOrigin(origins = {"http://localhost:3000", "http://funfriday.co.in", "https://funfriday.co.in"}, allowCredentials = "true")
 @RequiredArgsConstructor
@@ -64,6 +66,7 @@ public class AuthController {
                     "pictureUrl", verifiedProfile.pictureUrl() == null ? "" : verifiedProfile.pictureUrl()
             ));
         } catch (Exception exception) {
+            log.error("Google sign-in failed", exception);
             return ResponseEntity.internalServerError().body(Map.of("error", "Unable to complete Google sign-in."));
         }
     }
