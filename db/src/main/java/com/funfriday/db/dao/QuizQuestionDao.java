@@ -73,7 +73,7 @@ public class QuizQuestionDao {
                      SELECT question_key, question_type, prompt
                      FROM quiz_questions
                      WHERE category = ? AND is_active = TRUE
-                     ORDER BY created_at DESC, id DESC
+                     ORDER BY created_at ASC, id ASC
                      """)) {
             statement.setString(1, category);
             try (ResultSet resultSet = statement.executeQuery()) {
