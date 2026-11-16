@@ -73,6 +73,7 @@ public class QuizRoyaleGame implements GameLogic, GameModeProvider {
         markAnswerAsAnswered(data, expected);
         QuizRoyalePlayerStats stats = (QuizRoyalePlayerStats) data.getScoreBoard().get(action.getPlayerId());
         stats.setCorrectAnswers(stats.getCorrectAnswers() + 1);
+        data.getQuestionCorrectAnswers().merge(action.getPlayerId(), 1, Integer::sum);
         stats.setScore(stats.getCorrectAnswers());
         data.setLastEvent(stats.getPlayerName() + " found " + expected.getValue());
         if (data.getQuestion().getType() == QuizQuestionType.CHRONOLOGY) data.setChronologyIndex(data.getChronologyIndex() + 1);
@@ -109,6 +110,7 @@ public class QuizRoyaleGame implements GameLogic, GameModeProvider {
         if (!data.getAllPlayAnsweredPlayerIds().contains(action.getPlayerId())) data.getAllPlayAnsweredPlayerIds().add(action.getPlayerId());
         QuizRoyalePlayerStats stats = (QuizRoyalePlayerStats) data.getScoreBoard().get(action.getPlayerId());
         stats.setCorrectAnswers(stats.getCorrectAnswers() + 1);
+        data.getQuestionCorrectAnswers().merge(action.getPlayerId(), 1, Integer::sum);
         stats.setScore(stats.getCorrectAnswers());
         data.setLastEvent(stats.getPlayerName() + " found " + expected.getValue());
         if (data.getQuestion().getType() == QuizQuestionType.CHRONOLOGY) data.setChronologyIndex(data.getChronologyIndex() + 1);
@@ -248,6 +250,7 @@ public class QuizRoyaleGame implements GameLogic, GameModeProvider {
         data.getAcceptedAnswers().clear();
         data.getAnsweredAnswerIndexes().clear();
         data.getRevealedAnswerIndexes().clear();
+        data.getQuestionCorrectAnswers().clear();
         data.getAllPlayAnsweredPlayerIds().clear();
         data.getChronologyPassedPlayerIds().clear();
         data.setChronologyIndex(0);
@@ -267,12 +270,14 @@ public class QuizRoyaleGame implements GameLogic, GameModeProvider {
         QuizQuestion question = data.getQuestion();
         data.getQuestionResults().add(new QuizQuestionResult(
                 data.getQuestionIndex() + 1,
+                question.getId(),
                 question.getPrompt(),
                 question.getCategory(),
                 question.getType(),
                 question.getAnswers().stream().map(QuizAnswer::getValue).toList(),
                 new ArrayList<>(question.getChronologyHints()),
-                new ArrayList<>(data.getAnsweredAnswerIndexes())
+                new ArrayList<>(data.getAnsweredAnswerIndexes()),
+                new LinkedHashMap<>(data.getQuestionCorrectAnswers())
         ));
     }
 

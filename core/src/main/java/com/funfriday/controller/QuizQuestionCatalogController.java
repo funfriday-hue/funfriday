@@ -37,11 +37,19 @@ public class QuizQuestionCatalogController {
         String normalizedCategory = category.toUpperCase(java.util.Locale.ROOT);
         if (!CATEGORIES.contains(normalizedCategory)) return ResponseEntity.badRequest().body("Unknown quiz category");
         try {
-            String playerId = jwtService.currentUser(request).map(FunFridayJwtService.PlayerPrincipal::playerId).orElse(browserPlayerId);
-            Map<String, PlayerQuestionProgress> progress = playerId == null ? Map.of()
-                    : playerQuestionProgressDao.findByPlayerAndCategory(playerId, normalizedCategory);
-            List<QuizQuestionSummary> questions = quizQuestionDao.listActiveSummariesByCategory(normalizedCategory, progress);
-            return ResponseEntity.ok(questions);
+            var authenticatedPlayer = jwtService.currentUser(request);
+            boolean signedIn = authenticatedPlayer.isPresent();
+            String playerId = authenticatedPlayer.map(FunFridayJwtService.PlayerPrincipal::playerId).orElse(browserPlayerId);
+            Map<String, PlayerQuestionProgress> progress = signedIn && playerId != null
+                    ? playerQuestionProgressDao.findByPlayerAndCategory(playerId, normalizedCategory)
+                    : Map.of();
+            List<QuizQuestionSummary> allQuestions = quizQuestionDao.listActiveSummariesByCategory(normalizedCategory, progress);
+            int visibleQuestionCount = signedIn ? allQuestions.size() : Math.min(5, allQuestions.size());
+            return ResponseEntity.ok(new QuizQuestionCatalogResponse(
+                    allQuestions.subList(0, visibleQuestionCount),
+                    allQuestions.size() - visibleQuestionCount,
+                    signedIn
+            ));
         } catch (Exception exception) {
             return ResponseEntity.internalServerError().body("Unable to load questions");
         }

@@ -4,7 +4,9 @@ import com.funfriday.model.GameData;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Data @EqualsAndHashCode(callSuper = true)
 public class QuizRoyaleData extends GameData<QuizRoyaleConfiguration> {
@@ -23,6 +25,8 @@ public class QuizRoyaleData extends GameData<QuizRoyaleConfiguration> {
     private List<String> acceptedAnswers = new ArrayList<>();
     private List<Integer> answeredAnswerIndexes = new ArrayList<>();
     private List<Integer> revealedAnswerIndexes = new ArrayList<>();
+    /** Correct answers earned by each player on the current question only. */
+    private Map<String, Integer> questionCorrectAnswers = new LinkedHashMap<>();
     private long turnStartedAtMillis;
     private String lastEvent;
     private List<String> allPlayAnsweredPlayerIds = new ArrayList<>();
