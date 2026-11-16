@@ -2,6 +2,7 @@ package com.funfriday.controller;
 
 import com.funfriday.service.FunFridayJwtService;
 import com.funfriday.service.GoogleIdentityService;
+import com.funfriday.db.dao.PlayerQuestionProgressDao;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpServletRequest;
@@ -25,6 +26,7 @@ public class AuthController {
     private static final int ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
     private final GoogleIdentityService googleIdentityService;
     private final FunFridayJwtService jwtService;
+    private final PlayerQuestionProgressDao playerQuestionProgressDao;
 
     /** Client IDs are public OAuth configuration; credentials remain server-side. */
     @GetMapping("/google/config")
@@ -41,6 +43,8 @@ public class AuthController {
 
             GoogleIdentityService.GoogleProfile verifiedProfile = profile.get();
             String stablePlayerId = jwtService.playerIdFor(verifiedProfile.subject());
+            String guestPlayerId = readCookie(httpRequest, "playerId");
+            playerQuestionProgressDao.mergePlayerProgress(guestPlayerId, stablePlayerId);
             Cookie playerId = new Cookie("playerId", stablePlayerId);
             playerId.setPath("/");
             playerId.setHttpOnly(false); // existing WebSocket admission reads this stable game identity.
@@ -91,6 +95,14 @@ public class AuthController {
         cookie.setSecure(secure);
         cookie.setMaxAge(0);
         response.addCookie(cookie);
+    }
+
+    private String readCookie(HttpServletRequest request, String name) {
+        if (request.getCookies() == null) return null;
+        for (Cookie cookie : request.getCookies()) {
+            if (name.equals(cookie.getName())) return cookie.getValue();
+        }
+        return null;
     }
 
     public record GoogleCredentialRequest(String credential) { }

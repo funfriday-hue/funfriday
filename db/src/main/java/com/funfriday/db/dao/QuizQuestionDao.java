@@ -4,6 +4,7 @@ import com.funfriday.db.DatabaseConnectionProvider;
 import com.funfriday.db.model.QuizAnswerRecord;
 import com.funfriday.db.model.QuizQuestionRecord;
 import com.funfriday.db.model.QuizQuestionSummary;
+import com.funfriday.db.model.PlayerQuestionProgress;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -12,6 +13,7 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Map;
 
 public class QuizQuestionDao {
     private static final String SELECT_RANDOM_ACTIVE_QUESTION = """
@@ -66,7 +68,7 @@ public class QuizQuestionDao {
         }
     }
 
-    public List<QuizQuestionSummary> listActiveSummariesByCategory(String category) throws SQLException {
+    public List<QuizQuestionSummary> listActiveSummariesByCategory(String category, Map<String, PlayerQuestionProgress> progressByQuestionKey) throws SQLException {
         List<QuizQuestionSummary> questions = new ArrayList<>();
         try (Connection connection = connectionProvider.getConnection();
              PreparedStatement statement = connection.prepareStatement("""
@@ -81,7 +83,8 @@ public class QuizQuestionDao {
                     questions.add(new QuizQuestionSummary(
                             resultSet.getString("question_key"),
                             resultSet.getString("question_type"),
-                            resultSet.getString("prompt")
+                            resultSet.getString("prompt"),
+                            progressByQuestionKey.get(resultSet.getString("question_key"))
                     ));
                 }
             }

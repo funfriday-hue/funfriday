@@ -4,6 +4,7 @@ package com.funfriday.db.model;
 public record QuizQuestionSummary(
         String questionKey,
         String questionType,
-        String prompt
+        String prompt,
+        PlayerQuestionProgress progress
 ) {
 }

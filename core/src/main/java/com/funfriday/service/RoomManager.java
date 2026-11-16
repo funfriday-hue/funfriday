@@ -37,6 +37,7 @@ public class RoomManager {
     private final GameFactory gameFactory;
     private final TimerGameManager timerManager;
     private final GameMetricsService gameMetricsService;
+    private final PlayerQuestionProgressService playerQuestionProgressService;
 
     private ExecutorService createRoomExecutor(String roomId) {
         ThreadFactory tf = r -> {
@@ -128,6 +129,7 @@ public class RoomManager {
                 room.handlePlayerAction(action);
                 if (statusBeforeAction != GameStatus.FINISHED && room.getStatus() == GameStatus.FINISHED) {
                     gameMetricsService.recordGameCompleted(room);
+                    playerQuestionProgressService.recordFinishedSelectedQuestion(room);
                 }
                 if (room.getGameData() instanceof QuizRoyaleData) {
                     if (((QuizRoyaleData) room.getGameData()).isQuestionActive()) timerManager.scheduleQuizRoyaleTurnTimer(roomId, room, exec, roomExecutors);

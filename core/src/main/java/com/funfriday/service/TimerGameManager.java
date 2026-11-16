@@ -26,6 +26,7 @@ public class TimerGameManager {
     private final SimpMessagingTemplate messagingTemplate;
     private final RoomViewFactory viewFactory;
     private final GameMetricsService gameMetricsService;
+    private final PlayerQuestionProgressService playerQuestionProgressService;
 
     // Scheduler used to enqueue periodic ticks (runs independently from room executors)
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(
@@ -174,6 +175,7 @@ public class TimerGameManager {
                     room.handlePlayerAction(timeoutAction);
                     if (statusBeforeTimeout != GameStatus.FINISHED && room.getStatus() == GameStatus.FINISHED) {
                         gameMetricsService.recordGameCompleted(room);
+                        playerQuestionProgressService.recordFinishedSelectedQuestion(room);
                     }
                     messagingTemplate.convertAndSend("/topic/room/" + roomId, viewFactory.buildPublicView(room));
 
