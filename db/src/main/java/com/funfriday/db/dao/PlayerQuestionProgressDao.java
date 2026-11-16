@@ -8,6 +8,8 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 /** Stores the best result, not every individual attempt, for the player catalogue. */
@@ -76,35 +78,39 @@ public class PlayerQuestionProgressDao {
     /** Retains a guest's history when that browser signs in for the first time. */
     public void mergePlayerProgress(String sourcePlayerId, String targetPlayerId) throws SQLException {
         if (sourcePlayerId == null || sourcePlayerId.isBlank() || sourcePlayerId.equals(targetPlayerId)) return;
-        try (Connection connection = connectionProvider.getConnection()) {
-            connection.setAutoCommit(false);
-            try (PreparedStatement merge = connection.prepareStatement("""
-                    INSERT INTO player_question_progress
-                        (player_id, question_key, best_correct_answers, answer_count, is_completed, first_played_at, last_played_at, completed_at)
-                    SELECT ?, question_key, best_correct_answers, answer_count, is_completed, first_played_at, last_played_at, completed_at
-                    FROM player_question_progress
-                    WHERE player_id = ?
-                    ON DUPLICATE KEY UPDATE
-                        best_correct_answers = GREATEST(player_question_progress.best_correct_answers, VALUES(best_correct_answers)),
-                        answer_count = GREATEST(player_question_progress.answer_count, VALUES(answer_count)),
-                        is_completed = player_question_progress.is_completed OR VALUES(is_completed),
-                        first_played_at = LEAST(player_question_progress.first_played_at, VALUES(first_played_at)),
-                        last_played_at = GREATEST(player_question_progress.last_played_at, VALUES(last_played_at)),
-                        completed_at = CASE
-                            WHEN player_question_progress.is_completed OR VALUES(is_completed)
-                                THEN COALESCE(player_question_progress.completed_at, VALUES(completed_at), CURRENT_TIMESTAMP)
-                            ELSE NULL
-                        END
-                    """)) {
-                merge.setString(1, targetPlayerId);
-                merge.setString(2, sourcePlayerId);
-                merge.executeUpdate();
-            }
-            try (PreparedStatement delete = connection.prepareStatement("DELETE FROM player_question_progress WHERE player_id = ?")) {
-                delete.setString(1, sourcePlayerId);
-                delete.executeUpdate();
-            }
-            connection.commit();
+        List<PlayerQuestionProgress> guestProgress = findByPlayerId(sourcePlayerId);
+        for (PlayerQuestionProgress progress : guestProgress) {
+            // Uses a regular VALUES upsert (not INSERT ... SELECT from the same table),
+            // which is portable across MySQL versions and avoids column ambiguity.
+            recordAttempt(targetPlayerId, progress.questionKey(), progress.bestCorrectAnswers(), progress.answerCount());
         }
+        try (Connection connection = connectionProvider.getConnection();
+             PreparedStatement delete = connection.prepareStatement("DELETE FROM player_question_progress WHERE player_id = ?")) {
+            delete.setString(1, sourcePlayerId);
+            delete.executeUpdate();
+        }
+    }
+
+    private List<PlayerQuestionProgress> findByPlayerId(String playerId) throws SQLException {
+        List<PlayerQuestionProgress> progress = new ArrayList<>();
+        try (Connection connection = connectionProvider.getConnection();
+             PreparedStatement statement = connection.prepareStatement("""
+                     SELECT question_key, best_correct_answers, answer_count, is_completed
+                     FROM player_question_progress
+                     WHERE player_id = ?
+                     """)) {
+            statement.setString(1, playerId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    progress.add(new PlayerQuestionProgress(
+                            resultSet.getString("question_key"),
+                            resultSet.getInt("best_correct_answers"),
+                            resultSet.getInt("answer_count"),
+                            resultSet.getBoolean("is_completed")
+                    ));
+                }
+            }
+        }
+        return progress;
     }
 }
