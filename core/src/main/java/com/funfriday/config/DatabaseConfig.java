@@ -9,6 +9,7 @@ import com.funfriday.db.dao.SudokuDao;
 import com.funfriday.db.dao.QuizAuditDao;
 import com.funfriday.db.dao.GameMetricsDao;
 import com.funfriday.db.dao.PlayerQuestionProgressDao;
+import com.funfriday.db.dao.PlayerSudokuProgressDao;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
@@ -46,6 +47,11 @@ public class DatabaseConfig {
     @Bean
     public PlayerQuestionProgressDao playerQuestionProgressDao(DatabaseConnectionProvider databaseConnectionProvider) {
         return new PlayerQuestionProgressDao(databaseConnectionProvider);
+    }
+
+    @Bean
+    public PlayerSudokuProgressDao playerSudokuProgressDao(DatabaseConnectionProvider databaseConnectionProvider) {
+        return new PlayerSudokuProgressDao(databaseConnectionProvider);
     }
 
     @Bean

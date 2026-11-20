@@ -18,7 +18,7 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component("sudokuGenerator")
 @RequiredArgsConstructor
-@GeneratorSchedule(interval = "PT12H")
+@GeneratorSchedule(interval = "PT168H")
 public class SudokuGenerator implements Generator {
     private final DatabaseConnectionProvider connectionProvider;
 

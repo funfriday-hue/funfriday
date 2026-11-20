@@ -22,10 +22,14 @@ public class SudokuData extends GameData<SudokuConfiguration> {
     // Board size (9 or 6)
     private int boardSize;
 
-    public SudokuData(int[][] puzzle, int[][] solution, int boardSize) {
+    // Database identity of the board, used only for catalogue progress aggregation.
+    private int puzzleId;
+
+    public SudokuData(int[][] puzzle, int[][] solution, int boardSize, int puzzleId) {
         this.initialBoard = puzzle;
         this.solution = solution;
         this.boardSize = boardSize;
+        this.puzzleId = puzzleId;
     }
 
     public void initializePlayer(String playerId) {

@@ -31,12 +31,15 @@ public class SudokuGameHandler implements GameLogic, GameModeProvider {
         int boardSize = mode.getSize();
 
         try {
-            SudokuPuzzle puzzle = sudokuDao.selectRandomBySize(boardSize)
+            SudokuPuzzle puzzle = (sConfig.getPuzzleId() == null
+                    ? sudokuDao.selectRandomBySize(boardSize)
+                    : sudokuDao.selectByIdAndSize(sConfig.getPuzzleId(), boardSize))
                     .orElseThrow(() -> new IllegalStateException("No Sudoku puzzle found for size " + boardSize));
             SudokuData data = new SudokuData(
                     parseGrid(puzzle.getGrid(), boardSize),
                     parseGrid(puzzle.getSolution(), boardSize),
-                    boardSize
+                    boardSize,
+                    puzzle.getId()
             );
             long playStartsAt = System.currentTimeMillis() + 5000;
             data.setPlayStartsAtMillis(playStartsAt);
@@ -232,10 +235,14 @@ public class SudokuGameHandler implements GameLogic, GameModeProvider {
         String rawMode = (String) payload.getOrDefault("gameMode", "SUDOKU_9x9");
         try {
             SudokuGameMode mode = SudokuGameMode.valueOf(rawMode.toUpperCase());
-            return new SudokuConfiguration(mode);
+            Integer puzzleId = null;
+            Object rawPuzzleId = payload.get("puzzleId");
+            if (rawPuzzleId instanceof Number number && number.intValue() > 0) puzzleId = number.intValue();
+            else if (rawPuzzleId instanceof String value && value.matches("\\d+")) puzzleId = Integer.parseInt(value);
+            return new SudokuConfiguration(mode, puzzleId);
         } catch (IllegalArgumentException e) {
             log.warn("Invalid Sudoku mode: {}, defaulting to 9x9", rawMode);
-            return new SudokuConfiguration(SudokuGameMode.SUDOKU_9X9);
+            return new SudokuConfiguration(SudokuGameMode.SUDOKU_9X9, null);
         }
     }
 

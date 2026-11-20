@@ -9,6 +9,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.util.Optional;
+import java.util.List;
 
 public class SudokuDao {
     private static final String SELECT_RANDOM_BY_SIZE = """
@@ -39,6 +40,49 @@ public class SudokuDao {
             }
         }
     }
+
+    public Optional<SudokuPuzzle> selectByIdAndSize(int puzzleId, int size) throws SQLException {
+        String sql = "SELECT id, size, grid, solution, created_at FROM sudoku_puzzles WHERE id = ? AND size = ?";
+        try (Connection connection = connectionProvider.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setInt(1, puzzleId);
+            statement.setInt(2, size);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                return resultSet.next() ? Optional.of(mapSudokuPuzzle(resultSet)) : Optional.empty();
+            }
+        }
+    }
+
+    public Page listPageBySize(int size, int page, int pageSize) throws SQLException {
+        int safePage = Math.max(0, page);
+        int safePageSize = Math.max(1, Math.min(24, pageSize));
+        try (Connection connection = connectionProvider.getConnection();
+             PreparedStatement count = connection.prepareStatement("SELECT COUNT(*) FROM sudoku_puzzles WHERE size = ?");
+             PreparedStatement rows = connection.prepareStatement("""
+                     SELECT id, size, grid, solution, created_at
+                     FROM sudoku_puzzles
+                     WHERE size = ?
+                     ORDER BY id ASC
+                     LIMIT ? OFFSET ?
+                     """)) {
+            count.setInt(1, size);
+            int total;
+            try (ResultSet resultSet = count.executeQuery()) {
+                resultSet.next();
+                total = resultSet.getInt(1);
+            }
+            rows.setInt(1, size);
+            rows.setInt(2, safePageSize);
+            rows.setInt(3, safePage * safePageSize);
+            java.util.ArrayList<SudokuPuzzle> puzzles = new java.util.ArrayList<>();
+            try (ResultSet resultSet = rows.executeQuery()) {
+                while (resultSet.next()) puzzles.add(mapSudokuPuzzle(resultSet));
+            }
+            return new Page(List.copyOf(puzzles), total, safePage, safePageSize);
+        }
+    }
+
+    public record Page(List<SudokuPuzzle> puzzles, int total, int page, int pageSize) { }
 
     private SudokuPuzzle mapSudokuPuzzle(ResultSet resultSet) throws SQLException {
         Timestamp createdAt = resultSet.getTimestamp("created_at");
