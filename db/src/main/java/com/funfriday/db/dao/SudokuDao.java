@@ -82,6 +82,49 @@ public class SudokuDao {
         }
     }
 
+    /**
+     * Returns a page filtered by the signed-in player's saved puzzle state.
+     * The filter value is validated by the controller before it reaches here.
+     */
+    public Page listPageBySizeAndProgress(int size, int page, int pageSize, String playerId, String progressFilter) throws SQLException {
+        int safePage = Math.max(0, page);
+        int safePageSize = Math.max(1, Math.min(24, pageSize));
+        String progressPredicate = switch (progressFilter) {
+            case "COMPLETED" -> " AND progress.is_completed = TRUE";
+            case "PARTIAL" -> " AND progress.is_completed = FALSE AND progress.best_progress_percent > 0";
+            case "NOT_SOLVED" -> " AND (progress.puzzle_id IS NULL OR (progress.is_completed = FALSE AND progress.best_progress_percent = 0))";
+            default -> "";
+        };
+        String fromAndWhere = """
+                FROM sudoku_puzzles puzzle
+                LEFT JOIN player_sudoku_progress progress
+                  ON progress.puzzle_id = puzzle.id AND progress.player_id = ?
+                WHERE puzzle.size = ?
+                """ + progressPredicate;
+        try (Connection connection = connectionProvider.getConnection();
+             PreparedStatement count = connection.prepareStatement("SELECT COUNT(*) " + fromAndWhere);
+             PreparedStatement rows = connection.prepareStatement("""
+                     SELECT puzzle.id, puzzle.size, puzzle.grid, puzzle.solution, puzzle.created_at
+                     """ + fromAndWhere + " ORDER BY puzzle.id ASC LIMIT ? OFFSET ?")) {
+            count.setString(1, playerId);
+            count.setInt(2, size);
+            int total;
+            try (ResultSet resultSet = count.executeQuery()) {
+                resultSet.next();
+                total = resultSet.getInt(1);
+            }
+            rows.setString(1, playerId);
+            rows.setInt(2, size);
+            rows.setInt(3, safePageSize);
+            rows.setInt(4, safePage * safePageSize);
+            java.util.ArrayList<SudokuPuzzle> puzzles = new java.util.ArrayList<>();
+            try (ResultSet resultSet = rows.executeQuery()) {
+                while (resultSet.next()) puzzles.add(mapSudokuPuzzle(resultSet));
+            }
+            return new Page(List.copyOf(puzzles), total, safePage, safePageSize);
+        }
+    }
+
     public record Page(List<SudokuPuzzle> puzzles, int total, int page, int pageSize) { }
 
     private SudokuPuzzle mapSudokuPuzzle(ResultSet resultSet) throws SQLException {
