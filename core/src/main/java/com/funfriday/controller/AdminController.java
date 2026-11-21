@@ -217,6 +217,20 @@ public class AdminController {
         }
     }
 
+    @DeleteMapping("/questions/{questionId}")
+    public ResponseEntity<?> deleteActiveQuestion(@RequestHeader(name = "Authorization", required = false) String authorization,
+                                                  @PathVariable(name = "questionId") long questionId) {
+        if (!adminAuthService.isAuthorized(authorization)) return unauthorized();
+        try {
+            return quizDraftDao.deleteActiveQuestion(questionId)
+                    ? ResponseEntity.ok(Map.of("status", "DELETED"))
+                    : ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "Question is no longer active."));
+        } catch (Exception exception) {
+            log.error("Unable to delete active Quiz Royale question {}", questionId, exception);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("message", "Unable to delete question."));
+        }
+    }
+
     @PostMapping("/drafts/{draftId}/decline")
     public ResponseEntity<?> decline(@RequestHeader(name = "Authorization", required = false) String authorization,
                                      @PathVariable(name = "draftId") long draftId,

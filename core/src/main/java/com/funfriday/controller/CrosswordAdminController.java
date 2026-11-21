@@ -76,6 +76,17 @@ public class CrosswordAdminController {
         : ResponseEntity.status(409).body(Map.of("message", "Puzzle unavailable"));
   }
 
+  @DeleteMapping("/puzzles/{id}")
+  public ResponseEntity<?> deletePuzzle(
+      @RequestHeader(name = "Authorization", required = false) String h,
+      @PathVariable(name = "id") long id)
+      throws Exception {
+    if (!allowed(h)) return unauthorized();
+    return dao.deletePublished(id)
+        ? ResponseEntity.ok(Map.of("status", "DELETED"))
+        : ResponseEntity.status(409).body(Map.of("message", "Puzzle is no longer available."));
+  }
+
   @PostMapping("/drafts/{id}/decline")
   public ResponseEntity<?> decline(
       @RequestHeader(name = "Authorization", required = false) String h,

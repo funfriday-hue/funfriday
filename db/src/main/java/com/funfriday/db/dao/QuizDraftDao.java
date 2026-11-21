@@ -329,6 +329,53 @@ public class QuizDraftDao {
         }
     }
 
+    /** Permanently removes an active question and any progress/audit records tied to it. */
+    public boolean deleteActiveQuestion(long questionId) throws SQLException {
+        try (Connection connection = connectionProvider.getConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                String questionKey;
+                try (PreparedStatement question = connection.prepareStatement("""
+                        SELECT question_key FROM quiz_questions
+                        WHERE id = ? AND is_active = TRUE FOR UPDATE
+                        """)) {
+                    question.setLong(1, questionId);
+                    try (ResultSet result = question.executeQuery()) {
+                        if (!result.next()) {
+                            connection.rollback();
+                            return false;
+                        }
+                        questionKey = result.getString("question_key");
+                    }
+                }
+                try (PreparedStatement progress = connection.prepareStatement(
+                        "DELETE FROM player_question_progress WHERE question_key = ?")) {
+                    progress.setString(1, questionKey);
+                    progress.executeUpdate();
+                }
+                try (PreparedStatement audits = connection.prepareStatement(
+                        "DELETE FROM quiz_question_audits WHERE question_id = ?")) {
+                    audits.setLong(1, questionId);
+                    audits.executeUpdate();
+                }
+                try (PreparedStatement question = connection.prepareStatement(
+                        "DELETE FROM quiz_questions WHERE id = ? AND is_active = TRUE")) {
+                    question.setLong(1, questionId);
+                    boolean deleted = question.executeUpdate() == 1;
+                    if (!deleted) {
+                        connection.rollback();
+                        return false;
+                    }
+                }
+                connection.commit();
+                return true;
+            } catch (SQLException exception) {
+                connection.rollback();
+                throw exception;
+            }
+        }
+    }
+
     private void insertAnswers(Connection connection, long questionId, List<QuizDraftAnswerRecord> answers) throws SQLException {
         try (PreparedStatement answerStatement = connection.prepareStatement("""
                 INSERT INTO quiz_answers(question_id, canonical_answer, display_order, hint) VALUES (?, ?, ?, ?)

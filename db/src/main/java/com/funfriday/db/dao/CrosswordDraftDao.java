@@ -161,6 +161,36 @@ public class CrosswordDraftDao {
     }
   }
 
+  /** Permanently removes a published crossword and the player progress attached to it. */
+  public boolean deletePublished(long id) throws SQLException {
+    try (Connection c = cp.getConnection()) {
+      c.setAutoCommit(false);
+      try {
+        // This explicit delete makes the data removal clear. The schema's foreign
+        // keys also cascade the related entries as a safety net.
+        try (PreparedStatement progress =
+            c.prepareStatement("DELETE FROM player_crossword_progress WHERE puzzle_id=?")) {
+          progress.setLong(1, id);
+          progress.executeUpdate();
+        }
+        try (PreparedStatement puzzle =
+            c.prepareStatement("DELETE FROM crossword_puzzles WHERE id=? AND is_active=TRUE")) {
+          puzzle.setLong(1, id);
+          boolean deleted = puzzle.executeUpdate() == 1;
+          if (!deleted) {
+            c.rollback();
+            return false;
+          }
+        }
+        c.commit();
+        return true;
+      } catch (SQLException exception) {
+        c.rollback();
+        throw exception;
+      }
+    }
+  }
+
   public boolean approve(long id, List<Map<String, Object>> entries) throws SQLException {
     try (Connection c = cp.getConnection()) {
       c.setAutoCommit(false);
