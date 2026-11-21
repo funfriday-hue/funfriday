@@ -31,7 +31,8 @@ public class GoogleIdentityService {
         String givenName = (String) payload.get("given_name");
         String email = payload.getEmail();
         String picture = (String) payload.get("picture");
-        if (subject == null || subject.isBlank() || name == null || name.isBlank()) return Optional.empty();
+        if (subject == null || subject.isBlank() || name == null || name.isBlank()
+                || email == null || email.isBlank()) return Optional.empty();
         String displayName = givenName == null || givenName.isBlank() ? firstName(name) : givenName.trim();
         return Optional.of(new GoogleProfile(subject, displayName, email, picture));
     }

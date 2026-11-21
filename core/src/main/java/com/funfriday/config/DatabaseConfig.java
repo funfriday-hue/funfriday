@@ -13,6 +13,7 @@ import com.funfriday.db.dao.PlayerSudokuProgressDao;
 import com.funfriday.db.dao.CrosswordDao;
 import com.funfriday.db.dao.PlayerCrosswordProgressDao;
 import com.funfriday.db.dao.CrosswordDraftDao;
+import com.funfriday.db.dao.PlayerAccountDao;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
@@ -61,6 +62,11 @@ public class DatabaseConfig {
     @Bean
     public PlayerQuestionProgressDao playerQuestionProgressDao(DatabaseConnectionProvider databaseConnectionProvider) {
         return new PlayerQuestionProgressDao(databaseConnectionProvider);
+    }
+
+    @Bean
+    public PlayerAccountDao playerAccountDao(DatabaseConnectionProvider databaseConnectionProvider) {
+        return new PlayerAccountDao(databaseConnectionProvider);
     }
 
     @Bean

@@ -3,6 +3,7 @@ package com.funfriday.controller;
 import com.funfriday.service.FunFridayJwtService;
 import com.funfriday.service.GoogleIdentityService;
 import com.funfriday.db.dao.PlayerQuestionProgressDao;
+import com.funfriday.db.dao.PlayerAccountDao;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpServletRequest;
@@ -29,6 +30,7 @@ public class AuthController {
     private final GoogleIdentityService googleIdentityService;
     private final FunFridayJwtService jwtService;
     private final PlayerQuestionProgressDao playerQuestionProgressDao;
+    private final PlayerAccountDao playerAccountDao;
 
     /** Client IDs are public OAuth configuration; credentials remain server-side. */
     @GetMapping("/google/config")
@@ -45,6 +47,12 @@ public class AuthController {
 
             GoogleIdentityService.GoogleProfile verifiedProfile = profile.get();
             String stablePlayerId = jwtService.playerIdFor(verifiedProfile.subject());
+            playerAccountDao.upsert(
+                    stablePlayerId,
+                    verifiedProfile.subject(),
+                    verifiedProfile.email(),
+                    verifiedProfile.name(),
+                    verifiedProfile.pictureUrl());
             String guestPlayerId = readCookie(httpRequest, "playerId");
             playerQuestionProgressDao.mergePlayerProgress(guestPlayerId, stablePlayerId);
             Cookie playerId = new Cookie("playerId", stablePlayerId);
