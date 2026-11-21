@@ -46,8 +46,8 @@ public class CrosswordDraftGenerator implements Generator {
           "SPORTS",
           "MYTHOLOGY",
           "HISTORY",
-              "Marvel",
-              "DC");
+          "MARVEL",
+          "DC");
 
 
   private final CrosswordDraftDao drafts;
@@ -64,6 +64,11 @@ public class CrosswordDraftGenerator implements Generator {
 
     String topic = TOPICS.get(random.nextInt(TOPICS.size()));
     String topicLabel = topic.replace('_', ' ');
+    List<String> existingClues = drafts.randomPublishedClueReferences(topic, 10);
+    String existingClueContext =
+        existingClues.isEmpty()
+            ? "No published crossword clues exist for this topic yet."
+            : String.join("\n", existingClues);
     String prompt =
         """
         Create one compact %s themed crossword draft with 10 to 15 factual answers. Return JSON only:
@@ -78,8 +83,14 @@ public class CrosswordDraftGenerator implements Generator {
         answer must fit its start coordinate and direction, crossings must use the same letter, no spaces/punctuation
         in answers, and the grid must be 9–15 cells in each direction. Use one clear topic and validate every fact
         before responding.
+
+        Here are up to 10 randomly selected clues already published for this topic:
+        %s
+
+        Do not reuse any listed answer. Do not write a clue about the same fact, character, event, or relationship
+        as a listed clue. Choose meaningfully different facts and answers for this new crossword.
         """
-            .formatted(topicLabel);
+            .formatted(topicLabel, existingClueContext);
 
     LlmJsonClient.Completion completion = null;
     JsonNode crossword = null;

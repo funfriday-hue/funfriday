@@ -47,7 +47,9 @@ public class CrosswordGame implements GameLogic {
               playable,
               solution,
               p.entries());
-      data.setPlayStartsAtMillis(System.currentTimeMillis() + 3000);
+      // Keep crossword consistent with the other timed mind games: players see
+      // the board first, then everyone starts together after five seconds.
+      data.setPlayStartsAtMillis(System.currentTimeMillis() + 5000);
       return data;
     } catch (Exception e) {
       throw new IllegalStateException("Unable to load crossword puzzle", e);
@@ -59,6 +61,9 @@ public class CrosswordGame implements GameLogic {
     if (!"CROSSWORD_SYNC".equals(action.getType()) && !"CROSSWORD_GIVE_UP".equals(action.getType()))
       return;
     CrosswordData data = (CrosswordData) raw;
+    // The browser also disables the board during the countdown, but the game
+    // server remains authoritative when a client sends a move early.
+    if (System.currentTimeMillis() < data.getPlayStartsAtMillis()) return;
     CrosswordPlayerStats stats =
         (CrosswordPlayerStats) data.getScoreBoard().get(action.getPlayerId());
     if ("CROSSWORD_GIVE_UP".equals(action.getType())) {

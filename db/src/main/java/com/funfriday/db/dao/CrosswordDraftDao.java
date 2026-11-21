@@ -61,6 +61,36 @@ public class CrosswordDraftDao {
     }
   }
 
+  /**
+   * A small, randomly selected inventory of published clues for the generator.
+   * Answers are included so it can avoid both repeated wording and repeated fill.
+   */
+  public List<String> randomPublishedClueReferences(String category, int limit)
+      throws SQLException {
+    List<String> references = new ArrayList<>();
+    try (Connection c = cp.getConnection();
+        PreparedStatement s =
+            c.prepareStatement(
+                "SELECT p.title,e.answer,e.clue FROM crossword_puzzles p"
+                    + " JOIN crossword_entries e ON e.puzzle_id=p.id"
+                    + " WHERE p.is_active=TRUE AND p.category=? ORDER BY RAND() LIMIT ?")) {
+      s.setString(1, category);
+      s.setInt(2, limit);
+      try (ResultSet r = s.executeQuery()) {
+        while (r.next()) {
+          references.add(
+              "["
+                  + r.getString("title")
+                  + "] answer: "
+                  + r.getString("answer")
+                  + " | clue: "
+                  + r.getString("clue"));
+        }
+      }
+    }
+    return references;
+  }
+
   public boolean update(long id, String title, String grid, String entries) throws SQLException {
     try (Connection c = cp.getConnection();
         PreparedStatement s =
