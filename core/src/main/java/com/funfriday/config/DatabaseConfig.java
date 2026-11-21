@@ -10,6 +10,9 @@ import com.funfriday.db.dao.QuizAuditDao;
 import com.funfriday.db.dao.GameMetricsDao;
 import com.funfriday.db.dao.PlayerQuestionProgressDao;
 import com.funfriday.db.dao.PlayerSudokuProgressDao;
+import com.funfriday.db.dao.CrosswordDao;
+import com.funfriday.db.dao.PlayerCrosswordProgressDao;
+import com.funfriday.db.dao.CrosswordDraftDao;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
@@ -38,6 +41,17 @@ public class DatabaseConfig {
     public SudokuDao sudokuDao(DatabaseConnectionProvider databaseConnectionProvider) {
         return new SudokuDao(databaseConnectionProvider);
     }
+
+    @Bean
+    public CrosswordDao crosswordDao(DatabaseConnectionProvider databaseConnectionProvider) {
+        return new CrosswordDao(databaseConnectionProvider);
+    }
+
+    @Bean
+    public PlayerCrosswordProgressDao playerCrosswordProgressDao(DatabaseConnectionProvider databaseConnectionProvider) {
+        return new PlayerCrosswordProgressDao(databaseConnectionProvider);
+    }
+    @Bean public CrosswordDraftDao crosswordDraftDao(DatabaseConnectionProvider databaseConnectionProvider) { return new CrosswordDraftDao(databaseConnectionProvider); }
 
     @Bean
     public QuizQuestionDao quizQuestionDao(DatabaseConnectionProvider databaseConnectionProvider) {

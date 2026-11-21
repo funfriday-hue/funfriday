@@ -61,6 +61,8 @@ public class GeneratorSchedulingConfig {
                         ? System.getenv().getOrDefault("QUIZ_DRAFT_GENERATOR_INTERVAL", schedule.interval())
                         : "quizQuestionAuditor".equals(beanName)
                         ? System.getenv().getOrDefault("QUIZ_AUDITOR_INTERVAL", schedule.interval())
+                        : "crosswordDraftGenerator".equals(beanName)
+                        ? System.getenv().getOrDefault("CROSSWORD_DRAFT_GENERATOR_INTERVAL", schedule.interval())
                         : schedule.interval();
                 Duration interval = Duration.parse(configuredInterval);
                 log.info("Starting generator {} with interval {}", beanName, interval);

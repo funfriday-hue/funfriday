@@ -39,6 +39,7 @@ public class RoomManager {
     private final GameMetricsService gameMetricsService;
     private final PlayerQuestionProgressService playerQuestionProgressService;
     private final PlayerSudokuProgressService playerSudokuProgressService;
+    private final PlayerCrosswordProgressService playerCrosswordProgressService;
 
     private ExecutorService createRoomExecutor(String roomId) {
         ThreadFactory tf = r -> {
@@ -129,6 +130,7 @@ public class RoomManager {
                 GameStatus statusBeforeAction = room.getStatus();
                 room.handlePlayerAction(action);
                 playerSudokuProgressService.recordCurrentProgress(room, action.getPlayerId());
+                playerCrosswordProgressService.recordCurrentProgress(room, action.getPlayerId());
                 if (statusBeforeAction != GameStatus.FINISHED && room.getStatus() == GameStatus.FINISHED) {
                     gameMetricsService.recordGameCompleted(room);
                     playerQuestionProgressService.recordFinishedSelectedQuestion(room);

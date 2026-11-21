@@ -6,6 +6,7 @@ import com.funfriday.games.dobble.DobbleAction;
 import com.funfriday.games.quizroyale.QuizRoyaleAction;
 import com.funfriday.games.suduko.SudokuAction;
 import com.funfriday.games.wordle.WordleAction;
+import com.funfriday.games.crossword.CrosswordAction;
 import lombok.Data;
 
 @Data
@@ -21,6 +22,8 @@ import lombok.Data;
         ,@JsonSubTypes.Type(value = QuizRoyaleAction.class, name = "QUIZ_TIMEOUT")
         ,@JsonSubTypes.Type(value = QuizRoyaleAction.class, name = "QUIZ_PASS")
         ,@JsonSubTypes.Type(value = QuizRoyaleAction.class, name = "QUIZ_START_QUESTION")
+        ,@JsonSubTypes.Type(value = CrosswordAction.class, name = "CROSSWORD_SYNC")
+        ,@JsonSubTypes.Type(value = CrosswordAction.class, name = "CROSSWORD_GIVE_UP")
 })
 public abstract class GameAction {
     private String type;
