@@ -105,11 +105,36 @@ public class CrosswordDraftDao {
         m.put("width", r.getInt("width"));
         m.put("height", r.getInt("height"));
         m.put("gridJson", r.getString("grid_json"));
+        m.put("entries", publishedEntries(c, r.getLong("id")));
         m.put("createdAt", r.getTimestamp("created_at"));
         out.add(m);
       }
     }
     return out;
+  }
+
+  private List<Map<String, Object>> publishedEntries(Connection c, long puzzleId) throws SQLException {
+    List<Map<String, Object>> entries = new ArrayList<>();
+    try (PreparedStatement s =
+            c.prepareStatement(
+                "SELECT clue_number,direction,row_index,column_index,answer,clue FROM crossword_entries"
+                    + " WHERE puzzle_id=? ORDER BY clue_number,direction");
+        ) {
+      s.setLong(1, puzzleId);
+      try (ResultSet r = s.executeQuery()) {
+        while (r.next()) {
+          Map<String, Object> entry = new LinkedHashMap<>();
+          entry.put("number", r.getInt("clue_number"));
+          entry.put("direction", r.getString("direction"));
+          entry.put("row", r.getInt("row_index"));
+          entry.put("column", r.getInt("column_index"));
+          entry.put("answer", r.getString("answer"));
+          entry.put("clue", r.getString("clue"));
+          entries.add(entry);
+        }
+      }
+    }
+    return entries;
   }
 
   public boolean updatePublished(
