@@ -4,6 +4,8 @@ import com.funfriday.dto.RoomPrivateView;
 import com.funfriday.dto.RoomPublicView;
 import com.funfriday.games.crossword.CrosswordData;
 import com.funfriday.games.crossword.CrosswordPlayerStats;
+import com.funfriday.games.logicgrid.LogicGridData;
+import com.funfriday.games.logicgrid.LogicGridPlayerStats;
 import com.funfriday.games.dobble.DobbleData;
 import com.funfriday.games.dobble.DobblePlayerStats;
 import com.funfriday.games.quizroyale.QuizRoyaleData;
@@ -42,6 +44,13 @@ public class RoomViewFactory {
                       stats != null
                           ? (stats.getStatus() != null ? stats.getStatus().name() : "UNKNOWN")
                           : "UNKNOWN";
+                  // A live Logic Grid score reveals whether an assignment is correct, which turns
+                  // the puzzle into trial and error. Reveal it only once that player's game ends.
+                  int visibleScore = score;
+                  if (data instanceof LogicGridData
+                      && !isLogicGridFinalStatus(stats != null ? stats.getStatus() : null)) {
+                    visibleScore = 0;
+                  }
 
                   Map<String, Object> statMap = new HashMap<>();
 
@@ -101,6 +110,14 @@ public class RoomViewFactory {
                       statMap.put("timeElapsedSeconds", cps.getTotalTimeMillis() / 1000);
                       statMap.put("completionTimeMillis", cps.getTotalTimeMillis());
                     }
+                  } else if (data instanceof LogicGridData grid) {
+                    if (stats instanceof LogicGridPlayerStats lps) {
+                      statMap.put("percentSolved", lps.getProgress());
+                      statMap.put("valuesSolved", lps.getValuesSolved());
+                      statMap.put("totalValues", grid.getEntities().size() * grid.getAttributes().size());
+                      statMap.put("timeElapsedSeconds", lps.getTotalTimeMillis() / 1000);
+                      statMap.put("completionTimeMillis", lps.getTotalTimeMillis());
+                    }
                   } else {
                     // Generic fallback
                     if (stats != null) {
@@ -118,13 +135,13 @@ public class RoomViewFactory {
                             stats != null && stats.getStatus() != null
                                 ? stats.getStatus().name()
                                 : "ACTIVE",
-                            stats != null ? stats.getScore() : 0,
+                            visibleScore,
                             statMap,
                             p.isConnected()));
                   }
 
                   return new RoomPublicView.PlayerPublic(
-                      p.getId(), p.getName(), status, score, statMap, p.isConnected());
+                      p.getId(), p.getName(), status, visibleScore, statMap, p.isConnected());
                 })
             .collect(Collectors.toList());
     Object publicGameData = null;
@@ -291,6 +308,11 @@ public class RoomViewFactory {
                             entry.clue()))
                 .toList());
       }
+      if (data instanceof LogicGridData grid) {
+        meta.put("puzzleId", grid.getPuzzleId()); meta.put("puzzleKey", grid.getPuzzleKey());
+        meta.put("category", grid.getCategory()); meta.put("title", grid.getTitle()); meta.put("story", grid.getStory());
+        meta.put("entities", grid.getEntities()); meta.put("attributes", grid.getAttributes()); meta.put("clues", grid.getClues());
+      }
       publicGameData = meta;
     }
 
@@ -351,6 +373,8 @@ public class RoomViewFactory {
         selfStatMap.put("totalClues", ((CrosswordData) data).getEntries().size());
         selfStatMap.put("timeElapsedSeconds", cps.getTotalTimeMillis() / 1000);
       }
+    } else if (data instanceof LogicGridData grid) {
+      if (selfStats instanceof LogicGridPlayerStats lps) { selfStatMap.put("percentSolved",lps.getProgress());selfStatMap.put("valuesSolved",lps.getValuesSolved());selfStatMap.put("totalValues",grid.getEntities().size()*grid.getAttributes().size());selfStatMap.put("timeElapsedSeconds",lps.getTotalTimeMillis()/1000); }
     } else {
       if (selfStats != null) {
         selfStatMap.put("timeElapsedSeconds", selfStats.getTimeInSeconds());
@@ -368,7 +392,9 @@ public class RoomViewFactory {
             selfStats != null && selfStats.getStatus() != null
                 ? selfStats.getStatus().name()
                 : "UNKNOWN",
-            selfStats != null ? selfStats.getScore() : 0,
+            data instanceof LogicGridData && !isLogicGridFinalStatus(selfStats != null ? selfStats.getStatus() : null)
+                ? 0
+                : selfStats != null ? selfStats.getScore() : 0,
             selfStatMap,
             room.getPlayerMap().containsKey(playerId)
                 && room.getPlayerMap().get(playerId).isConnected());
@@ -397,6 +423,11 @@ public class RoomViewFactory {
               || PlayerStatus.COMPLETED.equals(selfStats.getStatus()))) {
         privateGameData.put("solution", crossword.getSolution());
       }
+    } else if (data instanceof LogicGridData grid) {
+      privateGameData.put("answers", grid.getPlayerAnswers().get(playerId));
+      if (selfStats != null && (PlayerStatus.COMPLETED.equals(selfStats.getStatus()) || PlayerStatus.GIVEN_UP.equals(selfStats.getStatus()))) privateGameData.put("solution", grid.getSolution());
+      if (selfStats != null) privateGameData.put("status", selfStats.getStatus().name());
+      privateGameData.put("incorrectAttempt", grid.getPlayerIncorrectSubmissions().getOrDefault(playerId, false));
     }
 
     Object publicGameData = publicView.getGameSpecificPublicData();
@@ -410,5 +441,11 @@ public class RoomViewFactory {
         self,
         publicGameData,
         privateGameData);
+  }
+
+  private boolean isLogicGridFinalStatus(PlayerStatus status) {
+    return PlayerStatus.COMPLETED.equals(status)
+        || PlayerStatus.FAILED.equals(status)
+        || PlayerStatus.GIVEN_UP.equals(status);
   }
 }

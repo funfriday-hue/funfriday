@@ -1,0 +1,30 @@
+CREATE TABLE IF NOT EXISTS logic_grid_puzzles (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  puzzle_key VARCHAR(120) NOT NULL UNIQUE,
+  category VARCHAR(60) NOT NULL,
+  title VARCHAR(160) NOT NULL,
+  story TEXT NULL,
+  entities_json JSON NOT NULL,
+  attributes_json JSON NOT NULL,
+  clues_json JSON NOT NULL,
+  solution_json JSON NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_logic_grid_catalogue (is_active, category, id)
+);
+CREATE TABLE IF NOT EXISTS logic_grid_drafts LIKE logic_grid_puzzles;
+ALTER TABLE logic_grid_drafts ADD COLUMN IF NOT EXISTS status ENUM('DRAFT','APPROVED','DECLINED') NOT NULL DEFAULT 'DRAFT';
+ALTER TABLE logic_grid_drafts ADD COLUMN IF NOT EXISTS model VARCHAR(120) NULL;
+ALTER TABLE logic_grid_drafts ADD COLUMN IF NOT EXISTS decline_reason TEXT NULL;
+ALTER TABLE logic_grid_drafts ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMP NULL;
+CREATE TABLE IF NOT EXISTS player_logic_grid_progress (
+  player_id VARCHAR(64) NOT NULL, puzzle_id BIGINT UNSIGNED NOT NULL,
+  best_progress_percent TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  is_completed BOOLEAN NOT NULL DEFAULT FALSE,
+  first_played_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_played_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  completed_at TIMESTAMP NULL,
+  PRIMARY KEY(player_id,puzzle_id),
+  CONSTRAINT fk_player_logic_grid_puzzle FOREIGN KEY(puzzle_id) REFERENCES logic_grid_puzzles(id) ON DELETE CASCADE
+);

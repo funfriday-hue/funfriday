@@ -7,6 +7,7 @@ import com.funfriday.games.quizroyale.QuizRoyaleData;
 import com.funfriday.games.suduko.SudokuData;
 import com.funfriday.games.wordle.WordleData;
 import com.funfriday.games.crossword.CrosswordData;
+import com.funfriday.games.logicgrid.LogicGridData;
 import lombok.Data;
 
 import java.util.HashMap;
@@ -20,7 +21,8 @@ import java.util.concurrent.ConcurrentHashMap;
         @JsonSubTypes.Type(value = SudokuData.class, name = "SUDOKU"),
         @JsonSubTypes.Type(value = DobbleData.class, name = "DOBBLE"),
         @JsonSubTypes.Type(value = QuizRoyaleData.class, name = "QUIZ_ROYALE"),
-        @JsonSubTypes.Type(value = CrosswordData.class, name = "CROSSWORD")
+        @JsonSubTypes.Type(value = CrosswordData.class, name = "CROSSWORD"),
+        @JsonSubTypes.Type(value = LogicGridData.class, name = "LOGIC_GRID")
 })
 public abstract class GameData<T extends GameConfiguration> {
     // The central map: Player Name -> Their Stats

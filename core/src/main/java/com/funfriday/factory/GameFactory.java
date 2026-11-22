@@ -5,6 +5,7 @@ import com.funfriday.games.quizroyale.QuizRoyaleGame;
 import com.funfriday.games.suduko.SudokuGameHandler;
 import com.funfriday.games.wordle.WordleGame;
 import com.funfriday.games.crossword.CrosswordGame;
+import com.funfriday.games.logicgrid.LogicGridGame;
 import com.funfriday.service.GameLogic;
 import org.springframework.stereotype.Component;
 
@@ -16,17 +17,19 @@ public class GameFactory {
     private final DobbleGame dobbleGame;
     private final QuizRoyaleGame quizRoyaleGame;
     private final CrosswordGame crosswordGame;
+    private final LogicGridGame logicGridGame;
 
-    public GameFactory(WordleGame wordleGame, SudokuGameHandler sudokuGameHandler, DobbleGame dobbleGame, QuizRoyaleGame quizRoyaleGame, CrosswordGame crosswordGame) {
+    public GameFactory(WordleGame wordleGame, SudokuGameHandler sudokuGameHandler, DobbleGame dobbleGame, QuizRoyaleGame quizRoyaleGame, CrosswordGame crosswordGame, LogicGridGame logicGridGame) {
         this.wordleGame = wordleGame;
         this.sudokuGameHandler = sudokuGameHandler;
         this.dobbleGame = dobbleGame;
         this.quizRoyaleGame = quizRoyaleGame;
         this.crosswordGame = crosswordGame;
+        this.logicGridGame = logicGridGame;
     }
 
     public enum GameType {
-        WORDLE, SUDOKU, DOBBLE, QUIZ_ROYALE, CROSSWORD
+        WORDLE, SUDOKU, DOBBLE, QUIZ_ROYALE, CROSSWORD, LOGIC_GRID
     }
 
     public GameLogic createGame(GameType type) {
@@ -36,6 +39,7 @@ public class GameFactory {
             case DOBBLE -> dobbleGame;
             case QUIZ_ROYALE -> quizRoyaleGame;
             case CROSSWORD -> crosswordGame;
+            case LOGIC_GRID -> logicGridGame;
             default -> throw new IllegalArgumentException("Unknown game type: " + type);
         };
     }

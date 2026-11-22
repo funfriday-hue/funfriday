@@ -14,6 +14,9 @@ import com.funfriday.db.dao.CrosswordDao;
 import com.funfriday.db.dao.PlayerCrosswordProgressDao;
 import com.funfriday.db.dao.CrosswordDraftDao;
 import com.funfriday.db.dao.PlayerAccountDao;
+import com.funfriday.db.dao.LogicGridDao;
+import com.funfriday.db.dao.LogicGridDraftDao;
+import com.funfriday.db.dao.PlayerLogicGridProgressDao;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
@@ -68,6 +71,9 @@ public class DatabaseConfig {
     public PlayerAccountDao playerAccountDao(DatabaseConnectionProvider databaseConnectionProvider) {
         return new PlayerAccountDao(databaseConnectionProvider);
     }
+    @Bean public LogicGridDao logicGridDao(DatabaseConnectionProvider databaseConnectionProvider) { return new LogicGridDao(databaseConnectionProvider); }
+    @Bean public LogicGridDraftDao logicGridDraftDao(DatabaseConnectionProvider databaseConnectionProvider) { return new LogicGridDraftDao(databaseConnectionProvider); }
+    @Bean public PlayerLogicGridProgressDao playerLogicGridProgressDao(DatabaseConnectionProvider databaseConnectionProvider) { return new PlayerLogicGridProgressDao(databaseConnectionProvider); }
 
     @Bean
     public PlayerSudokuProgressDao playerSudokuProgressDao(DatabaseConnectionProvider databaseConnectionProvider) {
