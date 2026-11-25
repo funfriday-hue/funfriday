@@ -2,6 +2,8 @@ package com.funfriday.llm;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -16,6 +18,8 @@ import java.util.*;
 /** Shared JSON-only LLM gateway for quiz generation, auditing and editor tools. */
 @Component
 public class LlmJsonClient {
+    private static final List<Long> DEFAULT_RETRY_DELAYS_MILLIS = List.of(30_000L, 120_000L, 600_000L);
+    private static final Logger log = LoggerFactory.getLogger(LlmJsonClient.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
@@ -26,11 +30,32 @@ public class LlmJsonClient {
                 .orElseThrow(() -> new IllegalStateException("LLM_API_KEY is not configured."));
         Exception lastFailure = null;
         for (String model : configuredModels()) {
-            try {
-                return new Completion(model, call(apiKey, model, systemPrompt, userPrompt, temperature));
-            } catch (Exception exception) {
-                if (!isTransientFailure(exception)) throw exception;
-                lastFailure = exception;
+            List<Long> retryDelays = retryDelaysMillis();
+            for (int attempt = 0; attempt <= retryDelays.size(); attempt++) {
+                try {
+                    return new Completion(model, call(apiKey, model, systemPrompt, userPrompt, temperature));
+                } catch (Exception exception) {
+                    if (!isTransientFailure(exception)) throw exception;
+                    lastFailure = exception;
+                    if (attempt == retryDelays.size()) {
+                        log.warn("LLM model {} failed after {} transient attempts: {}", model, attempt + 1, exception.getMessage());
+                        break;
+                    }
+
+                    long delayMillis = retryDelays.get(attempt);
+                    log.warn(
+                            "LLM model {} failed transiently on attempt {}; retrying in {} seconds: {}",
+                            model,
+                            attempt + 1,
+                            delayMillis / 1_000,
+                            exception.getMessage());
+                    try {
+                        Thread.sleep(delayMillis);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        throw new IllegalStateException("Interrupted while waiting to retry an LLM request.", interrupted);
+                    }
+                }
             }
         }
         throw new IllegalStateException("All configured LLM models failed temporarily.", lastFailure);
@@ -59,6 +84,25 @@ public class LlmJsonClient {
         List<String> models = Arrays.stream(configured.split(",")).map(String::trim).filter(value -> !value.isBlank()).distinct().toList();
         if (models.isEmpty()) throw new IllegalStateException("Configure at least one LLM model.");
         return models;
+    }
+    private List<Long> retryDelaysMillis() {
+        String configured = Optional.ofNullable(System.getenv("LLM_RETRY_DELAYS_SECONDS"))
+                .filter(value -> !value.isBlank())
+                .orElse(null);
+        if (configured == null) return DEFAULT_RETRY_DELAYS_MILLIS;
+        try {
+            List<Long> delays = Arrays.stream(configured.split(","))
+                    .map(String::trim)
+                    .filter(value -> !value.isBlank())
+                    .map(Long::parseLong)
+                    .filter(value -> value > 0)
+                    .map(seconds -> Math.multiplyExact(seconds, 1_000L))
+                    .toList();
+            if (!delays.isEmpty()) return delays;
+        } catch (RuntimeException exception) {
+            log.warn("Ignoring invalid LLM_RETRY_DELAYS_SECONDS value; using default retry delays.", exception);
+        }
+        return DEFAULT_RETRY_DELAYS_MILLIS;
     }
     private boolean isTransientFailure(Exception exception) {
         if (exception instanceof HttpTimeoutException || exception instanceof IOException) return true;

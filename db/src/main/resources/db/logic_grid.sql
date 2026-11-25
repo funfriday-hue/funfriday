@@ -14,10 +14,43 @@ CREATE TABLE IF NOT EXISTS logic_grid_puzzles (
   INDEX idx_logic_grid_catalogue (is_active, category, id)
 );
 CREATE TABLE IF NOT EXISTS logic_grid_drafts LIKE logic_grid_puzzles;
-ALTER TABLE logic_grid_drafts ADD COLUMN IF NOT EXISTS status ENUM('DRAFT','APPROVED','DECLINED') NOT NULL DEFAULT 'DRAFT';
-ALTER TABLE logic_grid_drafts ADD COLUMN IF NOT EXISTS model VARCHAR(120) NULL;
-ALTER TABLE logic_grid_drafts ADD COLUMN IF NOT EXISTS decline_reason TEXT NULL;
-ALTER TABLE logic_grid_drafts ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMP NULL;
+-- MySQL does not support ADD COLUMN IF NOT EXISTS on all supported versions.
+-- Use INFORMATION_SCHEMA checks so this migration is safe to run repeatedly.
+DROP PROCEDURE IF EXISTS ensure_logic_grid_draft_columns;
+DELIMITER //
+CREATE PROCEDURE ensure_logic_grid_draft_columns()
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'logic_grid_drafts' AND COLUMN_NAME = 'status'
+  ) THEN
+    ALTER TABLE logic_grid_drafts ADD COLUMN status ENUM('DRAFT','APPROVED','DECLINED') NOT NULL DEFAULT 'DRAFT';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'logic_grid_drafts' AND COLUMN_NAME = 'model'
+  ) THEN
+    ALTER TABLE logic_grid_drafts ADD COLUMN model VARCHAR(120) NULL;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'logic_grid_drafts' AND COLUMN_NAME = 'decline_reason'
+  ) THEN
+    ALTER TABLE logic_grid_drafts ADD COLUMN decline_reason TEXT NULL;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'logic_grid_drafts' AND COLUMN_NAME = 'reviewed_at'
+  ) THEN
+    ALTER TABLE logic_grid_drafts ADD COLUMN reviewed_at TIMESTAMP NULL;
+  END IF;
+END//
+DELIMITER ;
+CALL ensure_logic_grid_draft_columns();
+DROP PROCEDURE IF EXISTS ensure_logic_grid_draft_columns;
 CREATE TABLE IF NOT EXISTS player_logic_grid_progress (
   player_id VARCHAR(64) NOT NULL, puzzle_id BIGINT UNSIGNED NOT NULL,
   best_progress_percent TINYINT UNSIGNED NOT NULL DEFAULT 0,
