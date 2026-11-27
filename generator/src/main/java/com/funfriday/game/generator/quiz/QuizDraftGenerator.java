@@ -27,7 +27,7 @@ import java.util.*;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-@GeneratorSchedule(interval = "PT12H")
+@GeneratorSchedule(interval = "PT24H")
 public class QuizDraftGenerator implements Generator {
     private static final ZoneId QUIZ_TIME_ZONE = ZoneId.of("Asia/Kolkata");
     private static final List<String> CATEGORIES = List.of("CRICKET", "FOOTBALL", "BOLLYWOOD", "WWE", "INDIA", "CHESS");
