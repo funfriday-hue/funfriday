@@ -4,6 +4,8 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.funfriday.dto.GameModeDTO;
 import com.funfriday.factory.GameFactory;
 import com.funfriday.games.quizroyale.QuizRoyaleData;
+import com.funfriday.games.wavelength.WavelengthData;
+import com.funfriday.games.wavelength.WavelengthPlayerStats;
 import com.funfriday.service.GameLogic;
 import lombok.Getter;
 import lombok.Setter;
@@ -28,6 +30,11 @@ public class GameRoom {
     private GameFactory.GameType type;
     private List<GameModeDTO.ModeOption> availableModes;
     private String initialGameMode;
+    /** Lobby-only Wavelength team choices. They are copied into immutable match data at start. */
+    private final Map<String, String> wavelengthTeamAssignments = new ConcurrentHashMap<>();
+    private final Map<String, String> wavelengthTeamNames = new ConcurrentHashMap<>();
+    @JsonIgnore
+    private String originalHostId;
     private final Map<String, GamePlayer> playerMap = new ConcurrentHashMap<>();
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 
@@ -37,7 +44,10 @@ public class GameRoom {
         this.startTime = System.currentTimeMillis();
         this.status = GameStatus.WAITING;
         this.type = gameType;
+        this.wavelengthTeamNames.put("A", "Team A");
+        this.wavelengthTeamNames.put("B", "Team B");
         this.host = this.addPlayer(hostId, hostname, true);
+        this.originalHostId = this.host.getId();
     }
 
     public GamePlayer addPlayer(String id, String name, boolean isHost) {
@@ -46,6 +56,9 @@ public class GameRoom {
         }
         if (id == null) {
             id = UUID.randomUUID().toString();
+        }
+            if (type == GameFactory.GameType.WAVELENGTH && !playerMap.containsKey(id) && playerMap.size() >= 14) {
+            throw new IllegalStateException("A Telepathy room can have at most 14 players.");
         }
         GamePlayer newPlayer = new GamePlayer(id, name, isHost);
         GamePlayer existing = playerMap.putIfAbsent(id, newPlayer);
@@ -57,9 +70,56 @@ public class GameRoom {
         try {
             GamePlayer player = playerMap.get(playerId);
             if (player != null) player.setSessionConnected(sessionId, connected);
+            if (type == GameFactory.GameType.WAVELENGTH) rebalanceWavelengthHost();
         } finally {
             lock.writeLock().unlock();
         }
+    }
+
+    public void setPlayerMicMuted(String playerId, boolean muted) {
+        lock.writeLock().lock();
+        try {
+            GamePlayer player = playerMap.get(playerId);
+            if (player == null) throw new IllegalStateException("Player is not in this room.");
+            player.setMicMuted(muted);
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    public void assignWavelengthTeam(String playerId, String teamId) {
+        lock.writeLock().lock();
+        try {
+            if (type != GameFactory.GameType.WAVELENGTH || status != GameStatus.WAITING) throw new IllegalStateException("Teams can only be changed in a Telepathy lobby.");
+            if (!playerMap.containsKey(playerId)) throw new IllegalStateException("Player is not in this room.");
+            if (!"A".equals(teamId) && !"B".equals(teamId)) throw new IllegalStateException("Choose one of the two teams.");
+            long existing = wavelengthTeamAssignments.entrySet().stream().filter(entry -> teamId.equals(entry.getValue()) && !playerId.equals(entry.getKey())).count();
+            if (existing >= 7) throw new IllegalStateException("That team is already full.");
+            wavelengthTeamAssignments.put(playerId, teamId);
+        } finally { lock.writeLock().unlock(); }
+    }
+
+    public void renameWavelengthTeam(String playerId, String teamId, String teamName) {
+        lock.writeLock().lock();
+        try {
+            if (type != GameFactory.GameType.WAVELENGTH || status != GameStatus.WAITING) throw new IllegalStateException("Teams can only be renamed in a Telepathy lobby.");
+            if (!playerMap.containsKey(playerId) || (!teamId.equals(wavelengthTeamAssignments.get(playerId)) && !playerId.equals(host.getId()))) throw new IllegalStateException("Join this team or be the host before renaming it.");
+            String clean = teamName == null ? "" : teamName.trim();
+            if (clean.length() < 2 || clean.length() > 24) throw new IllegalStateException("Team names must be 2 to 24 characters.");
+            wavelengthTeamNames.put(teamId, clean);
+        } finally { lock.writeLock().unlock(); }
+    }
+
+    private void rebalanceWavelengthHost() {
+        GamePlayer original = playerMap.get(originalHostId);
+        java.util.List<GamePlayer> connectedPlayers = playerMap.values().stream()
+            .filter(GamePlayer::isConnected).toList();
+        GamePlayer next = original != null && original.isConnected() ? original
+            : connectedPlayers.isEmpty() ? host
+            : connectedPlayers.get(java.util.concurrent.ThreadLocalRandom.current().nextInt(connectedPlayers.size()));
+        if (next == null || next == host) return;
+        playerMap.values().forEach(candidate -> candidate.setHost(candidate.getId().equals(next.getId())));
+        host = next;
     }
 
     public void kickPlayer(String requestingPlayerId, String playerId) {
@@ -96,6 +156,11 @@ public class GameRoom {
 
             Map<String, Object> parsePayload = new HashMap<>(genericProperties != null ? genericProperties : new HashMap<>());
             parsePayload.put("gameMode", gameMode);
+            if (type == GameFactory.GameType.WAVELENGTH) {
+                validateWavelengthTeams();
+                parsePayload.put("teamAssignments", new HashMap<>(wavelengthTeamAssignments));
+                parsePayload.put("teamNames", new HashMap<>(wavelengthTeamNames));
+            }
 
             GameConfiguration config = this.gameLogic.parseConfiguration(parsePayload);
             initializeNewMatch(config);
@@ -148,6 +213,14 @@ public class GameRoom {
             PlayerStats stats = this.gameLogic.createInitialStats(player, player.isHost());
             freshScoreboard.put(player.getId(), stats);
         }
+        if (initialGameData instanceof WavelengthData wavelengthData) {
+            freshScoreboard.values().forEach(stats -> {
+                if (stats instanceof WavelengthPlayerStats wavelengthStats) {
+                    wavelengthStats.setTeamId(wavelengthData.getTeamAssignments().getOrDefault(wavelengthStats.getPlayerId(), ""));
+                    wavelengthStats.setScore(wavelengthData.getTeamScores().getOrDefault(wavelengthStats.getTeamId(), 0));
+                }
+            });
+        }
         initialGameData.setScoreBoard(freshScoreboard);
         if (initialGameData instanceof QuizRoyaleData quizData) {
             quizData.setTurnOrder(new java.util.ArrayList<>(this.playerMap.keySet()));
@@ -159,6 +232,16 @@ public class GameRoom {
         this.gameData = initialGameData;
         this.startTime = System.currentTimeMillis();
         this.status = GameStatus.IN_PROGRESS;
+    }
+
+    private void validateWavelengthTeams() {
+        int total = playerMap.size();
+        if (total < 4 || total > 14) throw new IllegalStateException("Telepathy needs 4 to 14 players.");
+        long a = wavelengthTeamAssignments.values().stream().filter("A"::equals).count();
+        long b = wavelengthTeamAssignments.values().stream().filter("B"::equals).count();
+        if (wavelengthTeamAssignments.size() != total || a < 2 || b < 2 || Math.abs(a - b) > 1) {
+            throw new IllegalStateException("Everyone must choose a balanced team with at least two players per team.");
+        }
     }
 
     public void handlePlayerAction(GameAction action) {
@@ -179,6 +262,10 @@ public class GameRoom {
 
             if (!this.playerMap.containsKey(action.getPlayerId())) {
                 throw new IllegalStateException("Invalid User");
+            }
+            if ("WAVELENGTH_START_NEXT_ROUND".equals(action.getType())
+                    && !this.host.getId().equals(action.getPlayerId())) {
+                throw new IllegalStateException("Only the room host can start the next Telepathy round.");
             }
 
             // process the move and update stats while holding the write lock

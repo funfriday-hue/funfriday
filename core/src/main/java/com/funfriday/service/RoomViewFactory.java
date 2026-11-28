@@ -6,6 +6,8 @@ import com.funfriday.games.crossword.CrosswordData;
 import com.funfriday.games.crossword.CrosswordPlayerStats;
 import com.funfriday.games.logicgrid.LogicGridData;
 import com.funfriday.games.logicgrid.LogicGridPlayerStats;
+import com.funfriday.games.wavelength.WavelengthData;
+import com.funfriday.games.wavelength.WavelengthPlayerStats;
 import com.funfriday.games.dobble.DobbleData;
 import com.funfriday.games.dobble.DobblePlayerStats;
 import com.funfriday.games.quizroyale.QuizRoyaleData;
@@ -118,6 +120,11 @@ public class RoomViewFactory {
                       statMap.put("timeElapsedSeconds", lps.getTotalTimeMillis() / 1000);
                       statMap.put("completionTimeMillis", lps.getTotalTimeMillis());
                     }
+                  } else if (data instanceof WavelengthData wavelength) {
+                    if (stats instanceof WavelengthPlayerStats wps) {
+                      statMap.put("teamId", wps.getTeamId());
+                      statMap.put("teamScore", wavelength.getTeamScores().getOrDefault(wps.getTeamId(), 0));
+                    }
                   } else {
                     // Generic fallback
                     if (stats != null) {
@@ -137,14 +144,21 @@ public class RoomViewFactory {
                                 : "ACTIVE",
                             visibleScore,
                             statMap,
-                            p.isConnected()));
+                            p.isConnected(),
+                            p.isMicMuted()));
                   }
 
                   return new RoomPublicView.PlayerPublic(
-                      p.getId(), p.getName(), status, visibleScore, statMap, p.isConnected());
+                      p.getId(), p.getName(), status, visibleScore, statMap, p.isConnected(), p.isMicMuted());
                 })
             .collect(Collectors.toList());
     Object publicGameData = null;
+    if ("WAVELENGTH".equals(room.getType())) {
+      Map<String, Object> lobbyMeta = new HashMap<>();
+      lobbyMeta.put("teamAssignments", room.getWavelengthTeamAssignments());
+      lobbyMeta.put("teamNames", room.getWavelengthTeamNames());
+      publicGameData = lobbyMeta;
+    }
     if (data != null) {
       Map<String, Object> meta = new HashMap<>();
       meta.put("finished", data.isFinished());
@@ -313,6 +327,28 @@ public class RoomViewFactory {
         meta.put("category", grid.getCategory()); meta.put("title", grid.getTitle()); meta.put("story", grid.getStory());
         meta.put("entities", grid.getEntities()); meta.put("attributes", grid.getAttributes()); meta.put("clues", grid.getClues());
       }
+      if (data instanceof WavelengthData wavelength) {
+        meta.put("teamNames", wavelength.getTeamNames());
+        meta.put("teamAssignments", wavelength.getTeamAssignments());
+        meta.put("teamScores", wavelength.getTeamScores());
+        meta.put("roundNumber", wavelength.getRoundNumber());
+        meta.put("roundLimit", 10);
+        meta.put("activeTeamId", wavelength.getActiveTeamId());
+        meta.put("guessingTeamId", wavelength.guessingTeamId());
+        meta.put("clueGiverId", wavelength.getClueGiverId());
+        meta.put("phase", wavelength.getPhase().name());
+        meta.put("phaseEndsAtMillis", wavelength.getPhaseEndsAtMillis());
+        meta.put("hint", wavelength.getHint());
+        meta.put("dialPosition", wavelength.getDialPosition());
+        meta.put("roundResults", wavelength.getRoundResults());
+        meta.put("leftLabel", wavelength.getCurrentCard().leftLabel());
+        meta.put("rightLabel", wavelength.getCurrentCard().rightLabel());
+        meta.put("category", wavelength.getCurrentCard().category());
+        if (wavelength.getPhase() == WavelengthData.Phase.REVEAL || wavelength.getPhase() == WavelengthData.Phase.COMPLETE) {
+          meta.put("target", wavelength.getCurrentCard().target());
+          meta.put("awardedPoints", wavelength.getAwardedPoints());
+        }
+      }
       publicGameData = meta;
     }
 
@@ -397,7 +433,9 @@ public class RoomViewFactory {
                 : selfStats != null ? selfStats.getScore() : 0,
             selfStatMap,
             room.getPlayerMap().containsKey(playerId)
-                && room.getPlayerMap().get(playerId).isConnected());
+                && room.getPlayerMap().get(playerId).isConnected(),
+            room.getPlayerMap().containsKey(playerId)
+                && room.getPlayerMap().get(playerId).isMicMuted());
 
     Map<String, Object> privateGameData = new HashMap<>();
     // Wordle example
@@ -428,6 +466,14 @@ public class RoomViewFactory {
       if (selfStats != null && (PlayerStatus.COMPLETED.equals(selfStats.getStatus()) || PlayerStatus.GIVEN_UP.equals(selfStats.getStatus()))) privateGameData.put("solution", grid.getSolution());
       if (selfStats != null) privateGameData.put("status", selfStats.getStatus().name());
       privateGameData.put("incorrectAttempt", grid.getPlayerIncorrectSubmissions().getOrDefault(playerId, false));
+    } else if (data instanceof WavelengthData wavelength) {
+      privateGameData.put("teamId", wavelength.getTeamAssignments().get(playerId));
+      privateGameData.put("isClueGiver", Objects.equals(playerId, wavelength.getClueGiverId()));
+      if (Objects.equals(playerId, wavelength.getClueGiverId())
+          && (wavelength.getPhase() == WavelengthData.Phase.CLUE
+              || wavelength.getPhase() == WavelengthData.Phase.GUESS)) {
+        privateGameData.put("target", wavelength.getCurrentCard().target());
+      }
     }
 
     Object publicGameData = publicView.getGameSpecificPublicData();

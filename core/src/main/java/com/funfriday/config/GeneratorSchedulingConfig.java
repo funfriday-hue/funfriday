@@ -65,6 +65,8 @@ public class GeneratorSchedulingConfig {
                         ? System.getenv().getOrDefault("CROSSWORD_DRAFT_GENERATOR_INTERVAL", schedule.interval())
                         : "logicGridDraftGenerator".equals(beanName)
                         ? System.getenv().getOrDefault("LOGIC_GRID_DRAFT_GENERATOR_INTERVAL", schedule.interval())
+                        : "wavelengthCardDraftGenerator".equals(beanName)
+                        ? System.getenv().getOrDefault("WAVELENGTH_DRAFT_GENERATOR_INTERVAL", schedule.interval())
                         : schedule.interval();
                 Duration interval = Duration.parse(configuredInterval);
                 log.info("Starting generator {} with interval {}", beanName, interval);

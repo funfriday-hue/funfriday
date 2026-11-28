@@ -61,8 +61,12 @@ public class GameWebSocketController {
                         sendErrorMessage(roomId, action.getPlayerId(), "Action processing failed");
                     } else {
                         broadcastRoomPublic(roomId, updatedRoom);
-                        // Private detailed state to the player who acted (and optionally to others individually if needed)
-                        sendPrivateRoomUpdate(roomId, updatedRoom, action.getPlayerId());                    }
+                        // A move can change another player's private role or data (for example,
+                        // advancing a Telepathy round assigns a new clue giver). Refresh each
+                        // player's tailored view rather than only the player who made the move.
+                        updatedRoom.getPlayerMap().keySet().forEach(
+                                pid -> sendPrivateRoomUpdate(roomId, updatedRoom, pid));
+                    }
                 });
 
     }
@@ -185,6 +189,47 @@ public class GameWebSocketController {
                 });
     }
 
+    @MessageMapping("/game/{roomId}/team")
+    public void chooseWavelengthTeam(@DestinationVariable("roomId") String roomId, SimpMessageHeaderAccessor headerAccessor, @Payload TeamRequest request) {
+        String playerId = (String) headerAccessor.getSessionAttributes().get("playerId");
+        roomService.assignWavelengthTeam(roomId, playerId, request.teamId())
+                .thenAccept(room -> broadcastRoomPublic(roomId, room))
+                .exceptionally(ex -> { sendErrorMessage(roomId, playerId, ex.getMessage()); return null; });
+    }
+
+    @MessageMapping("/game/{roomId}/team-name")
+    public void renameWavelengthTeam(@DestinationVariable("roomId") String roomId, SimpMessageHeaderAccessor headerAccessor, @Payload TeamNameRequest request) {
+        String playerId = (String) headerAccessor.getSessionAttributes().get("playerId");
+        roomService.renameWavelengthTeam(roomId, playerId, request.teamId(), request.teamName())
+                .thenAccept(room -> broadcastRoomPublic(roomId, room))
+                .exceptionally(ex -> { sendErrorMessage(roomId, playerId, ex.getMessage()); return null; });
+    }
+
+    @MessageMapping("/game/{roomId}/mic")
+    public void updateMicStatus(@DestinationVariable("roomId") String roomId, SimpMessageHeaderAccessor headerAccessor, @Payload MicStatusRequest request) {
+        String playerId = (String) headerAccessor.getSessionAttributes().get("playerId");
+        roomService.updatePlayerMicStatus(roomId, playerId, request.muted())
+                .thenAccept(room -> broadcastRoomPublic(roomId, room))
+                .exceptionally(ex -> { sendErrorMessage(roomId, playerId, ex.getMessage()); return null; });
+    }
+
+    /** Relays WebRTC signaling only; browser-to-browser audio never passes through this server. */
+    @MessageMapping("/game/{roomId}/voice")
+    public void relayVoiceSignal(@DestinationVariable("roomId") String roomId,
+                                 SimpMessageHeaderAccessor headerAccessor,
+                                 @Payload VoiceSignalRequest request) {
+        String playerId = (String) headerAccessor.getSessionAttributes().get("playerId");
+        GameRoom room = roomService.getRoom(roomId);
+        if (room == null || playerId == null || request.to() == null
+                || !room.getPlayerMap().containsKey(playerId)
+                || !room.getPlayerMap().containsKey(request.to())) {
+            return;
+        }
+        messagingTemplate.convertAndSend(
+                "/topic/room/" + roomId + "/voice",
+                new VoiceSignal(request.type(), playerId, request.to(), request.sdp(), request.candidate()));
+    }
+
     @EventListener
     public void handleDisconnect(SessionDisconnectEvent event) {
         StompHeaderAccessor accessor = StompHeaderAccessor.wrap(event.getMessage());
@@ -232,6 +277,11 @@ public class GameWebSocketController {
     }
 
     private record KickPlayerRequest(String playerId) { }
+    private record TeamRequest(String teamId) { }
+    private record TeamNameRequest(String teamId, String teamName) { }
+    private record MicStatusRequest(boolean muted) { }
+    private record VoiceSignalRequest(String type, String to, Object sdp, Object candidate) { }
+    private record VoiceSignal(String type, String from, String to, Object sdp, Object candidate) { }
 
     @MessageExceptionHandler(InvalidGameMoveException.class)
     @SendToUser("/queue/errors")

@@ -6,6 +6,7 @@ import com.funfriday.games.dobble.DobblePlayerStats;
 import com.funfriday.games.quizroyale.QuizRoyalePlayerStats;
 import com.funfriday.games.suduko.SudokuPlayerStats;
 import com.funfriday.games.wordle.WordlePlayerStats;
+import com.funfriday.games.wavelength.WavelengthPlayerStats;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -17,7 +18,8 @@ import lombok.NoArgsConstructor;
         @JsonSubTypes.Type(value = WordlePlayerStats.class, name = "WORDLE"),
         @JsonSubTypes.Type(value = SudokuPlayerStats.class, name = "SUDOKU"),
         @JsonSubTypes.Type(value = DobblePlayerStats.class, name = "DOBBLE"),
-        @JsonSubTypes.Type(value = QuizRoyalePlayerStats.class, name = "QUIZ_ROYALE")
+        @JsonSubTypes.Type(value = QuizRoyalePlayerStats.class, name = "QUIZ_ROYALE"),
+        @JsonSubTypes.Type(value = WavelengthPlayerStats.class, name = "WAVELENGTH")
 })
 public abstract class PlayerStats {
     private GamePlayer player;

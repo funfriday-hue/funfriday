@@ -17,6 +17,8 @@ import com.funfriday.db.dao.PlayerAccountDao;
 import com.funfriday.db.dao.LogicGridDao;
 import com.funfriday.db.dao.LogicGridDraftDao;
 import com.funfriday.db.dao.PlayerLogicGridProgressDao;
+import com.funfriday.db.dao.WavelengthCardDao;
+import com.funfriday.db.dao.WavelengthCardDraftDao;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
@@ -74,6 +76,8 @@ public class DatabaseConfig {
     @Bean public LogicGridDao logicGridDao(DatabaseConnectionProvider databaseConnectionProvider) { return new LogicGridDao(databaseConnectionProvider); }
     @Bean public LogicGridDraftDao logicGridDraftDao(DatabaseConnectionProvider databaseConnectionProvider) { return new LogicGridDraftDao(databaseConnectionProvider); }
     @Bean public PlayerLogicGridProgressDao playerLogicGridProgressDao(DatabaseConnectionProvider databaseConnectionProvider) { return new PlayerLogicGridProgressDao(databaseConnectionProvider); }
+    @Bean public WavelengthCardDao wavelengthCardDao(DatabaseConnectionProvider databaseConnectionProvider) { return new WavelengthCardDao(databaseConnectionProvider); }
+    @Bean public WavelengthCardDraftDao wavelengthCardDraftDao(DatabaseConnectionProvider databaseConnectionProvider) { return new WavelengthCardDraftDao(databaseConnectionProvider); }
 
     @Bean
     public PlayerSudokuProgressDao playerSudokuProgressDao(DatabaseConnectionProvider databaseConnectionProvider) {

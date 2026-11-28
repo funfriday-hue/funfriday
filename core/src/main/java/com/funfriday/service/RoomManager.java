@@ -2,6 +2,7 @@ package com.funfriday.service;
 
 import com.funfriday.factory.GameFactory;
 import com.funfriday.games.quizroyale.QuizRoyaleData;
+import com.funfriday.games.wavelength.WavelengthData;
 import com.funfriday.model.GameAction;
 import com.funfriday.model.GameData;
 import com.funfriday.model.GameRoom;
@@ -140,6 +141,8 @@ public class RoomManager {
                 if (room.getGameData() instanceof QuizRoyaleData) {
                     if (((QuizRoyaleData) room.getGameData()).isQuestionActive()) timerManager.scheduleQuizRoyaleTurnTimer(roomId, room, exec, roomExecutors);
                     else timerManager.scheduleQuizRoyaleQuestionTransition(roomId, room, exec, roomExecutors);
+                } else if (room.getGameData() instanceof WavelengthData) {
+                    timerManager.scheduleWavelengthPhaseTimer(roomId, room, exec, roomExecutors);
                 }
                 cf.complete(room);
             } catch (Throwable t) {
@@ -173,6 +176,8 @@ public class RoomManager {
                 GameData<?> gameData = room.getGameData();
                 if (gameData instanceof QuizRoyaleData) {
                     timerManager.scheduleQuizRoyaleQuestionTransition(roomId, room, exec, roomExecutors);
+                } else if (gameData instanceof WavelengthData) {
+                    timerManager.scheduleWavelengthPhaseTimer(roomId, room, exec, roomExecutors);
                 } else if (gameData != null && gameData.getEndTimeMillis() > 0) {
                     timerManager.scheduleGameTimer(roomId, room, exec, roomExecutors);
                 }
@@ -207,6 +212,8 @@ public class RoomManager {
                 GameData<?> gameData = room.getGameData();
                 if (gameData instanceof QuizRoyaleData) {
                     timerManager.scheduleQuizRoyaleQuestionTransition(roomId, room, exec, roomExecutors);
+                } else if (gameData instanceof WavelengthData) {
+                    timerManager.scheduleWavelengthPhaseTimer(roomId, room, exec, roomExecutors);
                 } else if (gameData != null && gameData.getEndTimeMillis() > 0) {
                     timerManager.scheduleGameTimer(roomId, room, exec, roomExecutors);
                 }
@@ -248,8 +255,20 @@ public class RoomManager {
         return submitRoomUpdate(roomId, room -> room.setPlayerConnection(playerId, sessionId, connected));
     }
 
+    public CompletableFuture<GameRoom> updatePlayerMicStatus(String roomId, String playerId, boolean muted) {
+        return submitRoomUpdate(roomId, room -> room.setPlayerMicMuted(playerId, muted));
+    }
+
     public CompletableFuture<GameRoom> submitKickPlayer(String roomId, String requestingPlayerId, String playerId) {
         return submitRoomUpdate(roomId, room -> room.kickPlayer(requestingPlayerId, playerId));
+    }
+
+    public CompletableFuture<GameRoom> assignWavelengthTeam(String roomId, String playerId, String teamId) {
+        return submitRoomUpdate(roomId, room -> room.assignWavelengthTeam(playerId, teamId));
+    }
+
+    public CompletableFuture<GameRoom> renameWavelengthTeam(String roomId, String playerId, String teamId, String teamName) {
+        return submitRoomUpdate(roomId, room -> room.renameWavelengthTeam(playerId, teamId, teamName));
     }
 
     private CompletableFuture<GameRoom> submitRoomUpdate(String roomId, RoomUpdate operation) {

@@ -15,6 +15,8 @@ public class GamePlayer {
     private String id;
     private String name;
     private boolean isHost;
+    /** Public mic-status indicator; actual voice transport is handled by the client. */
+    private boolean micMuted = true;
     @JsonIgnore
     private final Set<String> connectedSessionIds = ConcurrentHashMap.newKeySet();
 

@@ -1,0 +1,35 @@
+CREATE TABLE IF NOT EXISTS wavelength_cards (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  card_key VARCHAR(120) NOT NULL UNIQUE,
+  category VARCHAR(60) NOT NULL,
+  left_label VARCHAR(80) NOT NULL,
+  right_label VARCHAR(80) NOT NULL,
+  target TINYINT NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CHECK (target >= -100 AND target <= 100),
+  INDEX idx_wavelength_active (is_active, category, id)
+);
+
+CREATE TABLE IF NOT EXISTS wavelength_card_drafts LIKE wavelength_cards;
+DROP PROCEDURE IF EXISTS ensure_wavelength_draft_columns;
+DELIMITER //
+CREATE PROCEDURE ensure_wavelength_draft_columns()
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'wavelength_card_drafts' AND COLUMN_NAME = 'status') THEN
+    ALTER TABLE wavelength_card_drafts ADD COLUMN status ENUM('DRAFT','APPROVED','DECLINED') NOT NULL DEFAULT 'DRAFT';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'wavelength_card_drafts' AND COLUMN_NAME = 'model') THEN
+    ALTER TABLE wavelength_card_drafts ADD COLUMN model VARCHAR(120) NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'wavelength_card_drafts' AND COLUMN_NAME = 'decline_reason') THEN
+    ALTER TABLE wavelength_card_drafts ADD COLUMN decline_reason TEXT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'wavelength_card_drafts' AND COLUMN_NAME = 'reviewed_at') THEN
+    ALTER TABLE wavelength_card_drafts ADD COLUMN reviewed_at TIMESTAMP NULL;
+  END IF;
+END//
+DELIMITER ;
+CALL ensure_wavelength_draft_columns();
+DROP PROCEDURE IF EXISTS ensure_wavelength_draft_columns;

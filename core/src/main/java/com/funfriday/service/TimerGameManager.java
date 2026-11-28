@@ -3,6 +3,8 @@ package com.funfriday.service;
 import com.funfriday.dto.RoomPublicView;
 import com.funfriday.games.quizroyale.QuizRoyaleAction;
 import com.funfriday.games.quizroyale.QuizRoyaleData;
+import com.funfriday.games.wavelength.WavelengthAction;
+import com.funfriday.games.wavelength.WavelengthData;
 import com.funfriday.model.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -220,6 +222,38 @@ public class TimerGameManager {
                     if (room.getStatus() == GameStatus.IN_PROGRESS) scheduleQuizRoyaleTurnTimer(roomId, room, roomExecutor, roomExecutors);
                 } catch (Throwable throwable) {
                     log.error("Error starting next Quiz Royale question for room {}", roomId, throwable);
+                }
+            });
+        }, delayMillis, TimeUnit.MILLISECONDS);
+        roomTimers.put(roomId, future);
+    }
+
+    /** Wavelength phases are server-authoritative. A scheduled transition is replaced whenever a
+     * clue is submitted or a guess is locked, so a stale phase timer cannot mutate a newer round. */
+    public void scheduleWavelengthPhaseTimer(String roomId, GameRoom room, ExecutorService roomExecutor, Map<String, ExecutorService> roomExecutors) {
+        if (!(room.getGameData() instanceof WavelengthData data) || room.getStatus() != GameStatus.IN_PROGRESS || data.getPhase() == WavelengthData.Phase.COMPLETE) {
+            cancelTimer(roomId);
+            return;
+        }
+        cancelTimer(roomId);
+        long expectedDeadline = data.getPhaseEndsAtMillis();
+        long delayMillis = Math.max(1, expectedDeadline - System.currentTimeMillis());
+        ScheduledFuture<?> future = scheduler.schedule(() -> {
+            ExecutorService executor = roomExecutors.get(roomId);
+            if (executor == null || executor.isShutdown()) return;
+            executor.submit(() -> {
+                try {
+                    if (room.getStatus() != GameStatus.IN_PROGRESS || !(room.getGameData() instanceof WavelengthData current)
+                            || current.getPhaseEndsAtMillis() != expectedDeadline) return;
+                    WavelengthAction timeout = new WavelengthAction();
+                    timeout.setType("WAVELENGTH_PHASE_TIMEOUT");
+                    timeout.setPlayerId(room.getHost().getId());
+                    room.handlePlayerAction(timeout);
+                    messagingTemplate.convertAndSend("/topic/room/" + roomId, viewFactory.buildPublicView(room));
+                    room.getPlayerMap().keySet().forEach(pid -> messagingTemplate.convertAndSend("/topic/room/" + roomId + "/player/" + pid + "/state", viewFactory.buildPrivateView(room, pid)));
+                    if (room.getStatus() == GameStatus.IN_PROGRESS) scheduleWavelengthPhaseTimer(roomId, room, roomExecutor, roomExecutors);
+                } catch (Throwable throwable) {
+                    log.error("Error transitioning Wavelength phase in room {}", roomId, throwable);
                 }
             });
         }, delayMillis, TimeUnit.MILLISECONDS);

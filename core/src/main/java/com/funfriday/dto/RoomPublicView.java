@@ -29,5 +29,6 @@ public class RoomPublicView {
         private int score;
         private Map<String, Object> stats;
         private boolean connected;
+        private boolean micMuted;
     }
 }

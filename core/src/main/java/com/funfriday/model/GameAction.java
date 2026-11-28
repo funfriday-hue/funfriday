@@ -8,6 +8,7 @@ import com.funfriday.games.suduko.SudokuAction;
 import com.funfriday.games.wordle.WordleAction;
 import com.funfriday.games.crossword.CrosswordAction;
 import com.funfriday.games.logicgrid.LogicGridAction;
+import com.funfriday.games.wavelength.WavelengthAction;
 import lombok.Data;
 
 @Data
@@ -27,6 +28,11 @@ import lombok.Data;
         ,@JsonSubTypes.Type(value = CrosswordAction.class, name = "CROSSWORD_GIVE_UP")
         ,@JsonSubTypes.Type(value = LogicGridAction.class, name = "LOGIC_GRID_SYNC")
         ,@JsonSubTypes.Type(value = LogicGridAction.class, name = "LOGIC_GRID_GIVE_UP")
+        ,@JsonSubTypes.Type(value = WavelengthAction.class, name = "WAVELENGTH_SUBMIT_HINT")
+        ,@JsonSubTypes.Type(value = WavelengthAction.class, name = "WAVELENGTH_SET_DIAL")
+        ,@JsonSubTypes.Type(value = WavelengthAction.class, name = "WAVELENGTH_SUBMIT_GUESS")
+        ,@JsonSubTypes.Type(value = WavelengthAction.class, name = "WAVELENGTH_PHASE_TIMEOUT")
+        ,@JsonSubTypes.Type(value = WavelengthAction.class, name = "WAVELENGTH_START_NEXT_ROUND")
 })
 public abstract class GameAction {
     private String type;
